@@ -1,0 +1,139 @@
+# SPDX-FileCopyrightText: Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES.
+# SPDX-FileCopyrightText: All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+hydra:
+  job:
+    chdir: True
+  run:
+    dir: "/home/dpruitt/scratch/corrdiff_inference/samples_dir"
+
+
+## Main options
+res_ckpt_filename: "/home/dpruitt/scratch/corrdiff_checkpoints/diffusion_hrrr_all_years/training-state-diffusion-007125.mdlus"   
+  # Checkpoint filename for the generative model  
+reg_ckpt_filename: "/home/dpruitt/scratch/corrdiff_checkpoints/regression_hrrr_all_years/training-state-regression-000514.mdlus" 
+  # Checkpoint filename for the mean predictor model
+image_outdir: "/home/dpruitt/scratch/corrdiff_inference/samples"
+  # Where to save the output images
+seeds: "0-63"
+  # Random seeds used for generation
+class_idx: null  
+  # Class label. Null is random
+num_steps: 8
+  # Number of sampling steps
+sample_res: "full"
+  # Sampling resolution
+regression_only: false
+  # regression only inference
+diffusion_only: false
+  # diffusion only inference
+sampling_method: deterministic
+  # Sampling method ["stochastic", "deterministic"]
+seed_batch_size: 4
+  # batch size across the seed dimension
+force_fp16: true
+  # Whether to force fp16 precision for the model. If false, it'll use the precision
+  # specified upon training.
+num_reader_workers: 2
+  # number of workers used for reading from the dataset
+  # 0 means data will be loaded in main thread (slow)
+num_writer_workers: 1
+  # number of workers to use for writing file
+  # To support multiple workers a threadsafe version of the netCDF library must be used
+use_torch_compile: True
+  # whether to use torch.compile on the diffusion model
+  # this will make the first time stamp generation very slow due to compilation overheads
+  # but will significantly speed up subsequent inference runs
+
+## Data options
+patch_shape_x: null
+patch_shape_y: null
+  # Patch size. Patch-based sampling will be utilized if these dimensions differ from 
+  # img_shape_x and img_shape_y
+overlap_pixels: 0 
+  # Number of overlapping pixels between adjacent patches
+boundary_pixels: 0
+  # Number of boundary pixels to be cropped out. 2 is recommanded to address the boundary
+  # artifact.
+hr_mean_conditioning: false
+  # High-res mean (regression's output) as additional condition
+gridtype: "sinusoidal"
+  # can be either linear, sinusoidal, or learnable
+N_grid_channels: 4
+times:
+  # Winter Storm
+  - 2022-02-03T12:00:00
+
+  # Texas heatwave
+  - 2022-04-06T12:00:00
+
+  # Tornado outbreak
+  - 2022-11-05T00:00:00
+  #Hurricane
+  - 2022-09-25T12:00:00
+  - 2022-09-27T12:00:00
+  - 2022-09-28T12:00:00
+  - 2022-09-28T15:00:00
+  - 2022-09-28T18:00:00
+  - 2022-09-28T21:00:00
+  - 2022-09-29T00:00:00
+
+## Weather data options
+dataset:
+  type: "hrrr"
+  #data_path: "/datasets/hrrr/downscaling/"
+  data_path: "s3://hrrr/downscaling/"
+  ds_factor: 4
+  # 2022 doesn't have the full set of variables
+  # only ['10u', '10v', '2t', 'tp', 'refc']
+  train_years: [2017, 2018, 2019, 2020, 2021]
+  valid_years: [2022]
+  # for overfit
+  # train_years: [2017, 2022]
+  # valid_years: [2018, 2019, 2020, 2021]
+  hrrr_window: [[1,1057], [4,1796]] # need dims to be divisible by 16 [[0,1024], [0,1024]]
+  sample_shape: null #[1024, 1024] # 1024,1024 w/ 1 batch 4 hrrr channels and all era5 channels is 77gb
+  #exclude_channels: ["gust","2d", "2r", "tp", "cape", "cin", "tcc", "dswrf", "dlwrf", "vbdsf", "veril", "hpbl"]
+  out_channels: ["refc", "2t", "10u", "10v"]
+  in_channels: ['u10m', 'v10m', 't2m', 'tcwv', 'sp', 'msl', 'u1000', 'u850', 'u500', 'u250', 'v1000', 'v850', 'v500', 'v250', 'z1000', 'z850', 'z500', 'z250', 't1000', 't850', 't500', 't250', 'q1000', 'q850', 'q500', 'q250']
+  use_all: True
+  train: False
+  #era5_channels: ["u500", "v500", "z500", "t500"] #, "u850", "v850", "z850", "t850", "u10m", "v10m", "t2m"]
+  overfit: False
+
+## Deterministic sampler options
+sigma_min: null
+  # Lowest noise level
+sigma_max: null
+  # Highest noise level
+rho: 7
+  # Time step exponent
+solver: euler
+  # ODE solver [euler, heun]
+discretization: "edm"
+  # Time step discretization [vp, ve, iddpm, edm]
+schedule: "linear"
+  # noise schedule sigma(t) [vp, ve, linear]
+scaling: null
+  # Signal scaling s(t) [vp, none]
+S_churn: 0
+  # Stochasticity strength
+S_min: 0
+  # Stochasticity min noise level
+S_max: .inf 
+  # Stochasticity max noise level
+S_noise: 1
+  # Stochasticity noise inflation

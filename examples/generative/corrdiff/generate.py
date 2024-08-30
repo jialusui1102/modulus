@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import pdb
 import hydra
 from omegaconf import OmegaConf, DictConfig
 import torch
@@ -89,13 +89,23 @@ def main(cfg: DictConfig) -> None:
     img_shape = dataset.image_shape()
     img_out_channels = len(dataset.output_channels())
 
+    # # Parse the patch shape
+    # if hasattr(cfg, "training.hp.patch_shape_x"):  # TODO better config handling
+    #     patch_shape_x = cfg.training.hp.patch_shape_x
+    # else:
+    #     patch_shape_x = None
+    # if hasattr(cfg, "training.hp.patch_shape_y"):
+    #     patch_shape_y = cfg.training.hp.patch_shape_y
+    # else:
+    #     patch_shape_y = None
+
     # Parse the patch shape
-    if hasattr(cfg, "training.hp.patch_shape_x"):  # TODO better config handling
-        patch_shape_x = cfg.training.hp.patch_shape_x
+    if hasattr(cfg.generation, "patch_shape_x"):  # TODO better config handling
+        patch_shape_x = cfg.generation.patch_shape_x
     else:
         patch_shape_x = None
-    if hasattr(cfg, "training.hp.patch_shape_y"):
-        patch_shape_y = cfg.training.hp.patch_shape_y
+    if hasattr(cfg.generation, "patch_shape_y"):
+        patch_shape_y = cfg.generation.patch_shape_y
     else:
         patch_shape_y = None
     patch_shape = (patch_shape_y, patch_shape_x)
@@ -104,7 +114,8 @@ def main(cfg: DictConfig) -> None:
         logger0.info("Patch-based training enabled")
     else:
         logger0.info("Patch-based training disabled")
-
+    print("image shape is",img_shape)
+    print("patch shape is",patch_shape)
     # Parse the inference mode
     if cfg.generation.inference_mode == "regression":
         load_net_reg, load_net_res = True, False
@@ -151,11 +162,50 @@ def main(cfg: DictConfig) -> None:
             raise NotImplementedError(
                 "High-res mean conditioning is not yet implemented for the deterministic sampler"
             )
+        """
+        
+        ## Deterministic sampler options
+        sigma_min: null
+        # Lowest noise level
+        sigma_max: null
+        # Highest noise level
+        rho: 7
+        # Time step exponent
+        # solver: euler
+        #   # ODE solver [euler, heun]
+        discretization: "edm"
+        # Time step discretization [vp, ve, iddpm, edm]
+        schedule: "linear"
+        # noise schedule sigma(t) [vp, ve, linear]
+        scaling: null
+        # Signal scaling s(t) [vp, none]
+        S_churn: 0.5
+        # Stochasticity strength
+        S_min: 0
+        # Stochasticity min noise level
+        S_max: .inf 
+        # Stochasticity max noise level
+        S_noise: 1
+        # Stochasticity noise inflation
+        """
         sampler_fn = partial(
             deterministic_sampler,
             num_steps=cfg.sampler.num_steps,
             # num_ensembles=cfg.generation.num_ensembles,
             solver=cfg.sampler.solver,
+
+            #add more customized sampler options:
+            sigma_min = cfg.sampler.sigma_min,
+            sigma_max = cfg.sampler.sigma_max,
+            rho = cfg.sampler.rho,
+            discretization = cfg.sampler.discretization,
+            schedule = cfg.sampler.schedule,
+            scaling = cfg.sampler.scaling,
+            S_churn = cfg.sampler.S_churn,
+            S_min = cfg.sampler.S_min,
+            S_max = cfg.sampler.S_max,
+            S_noise = cfg.sampler.S_noise
+
         )
     elif cfg.sampler.type == "stochastic":
         sampler_fn = partial(
@@ -193,8 +243,10 @@ def main(cfg: DictConfig) -> None:
                         latents_shape=(
                             cfg.generation.seed_batch_size,
                             img_out_channels,
-                            img_shape[1],
+                            # img_shape[1],
+                            # img_shape[0],
                             img_shape[0],
+                            img_shape[1],
                         ),
                     )
             if net_res:

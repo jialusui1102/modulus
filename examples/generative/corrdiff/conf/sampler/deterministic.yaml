@@ -16,7 +16,31 @@
 
 
 type: deterministic
-num_steps: 9
+num_steps: 18
   # Number of denoising steps
 solver: euler
   # ODE solver [euler, heun]
+
+  ## Deterministic sampler options
+sigma_min: null
+  # Lowest noise level
+sigma_max: null
+  # Highest noise level
+rho: 7
+  # Time step exponent
+# solver: euler
+#   # ODE solver [euler, heun]
+discretization: "edm"
+  # Time step discretization [vp, ve, iddpm, edm]
+schedule: "linear"
+  # noise schedule sigma(t) [vp, ve, linear]
+scaling: null
+  # Signal scaling s(t) [vp, none]
+S_churn: 0.5
+  # Stochasticity strength
+S_min: 0
+  # Stochasticity min noise level
+S_max: .inf 
+  # Stochasticity max noise level
+S_noise: 1
+  # Stochasticity noise inflation

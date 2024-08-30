@@ -1,0 +1,23 @@
+## Weather data options
+
+type: "hrrr"
+location: "/us_data/downscaling"
+ds_factor: 4
+train: true
+train_years: [2017, 2018, 2019, 2020, 2021]
+valid_years: [2022]
+hrrr_window: [[1,1057], [4,1796]] # need dims to be divisible by 16 what is this??
+sample_shape: null  # 1024,1024 w/ 1 batch 4 hrrr channels and all era5 channels is 77gb
+# avail
+# ['2t', '10u', '10v', 'refc', 'gust', '2d', '2r', 'tp', 'cape', 'cin', 'tcc', 'dswrf', 'dlwrf', 'vbdsf', 'veril', 'hpbl']
+# 2022 doesn't have the full set of variables
+# only ['10u', '10v', '2t', 'tp', 'refc'], tp has NaNs, should be 0?
+out_channels: ["refc", "2t", "10u", "10v"]
+# avail 
+# ['u10m', 'v10m', 't2m', 'tcwv', 'sp', 'msl', 'u1000', 'u850', 'u500', 'u250', 'v1000', 'v850', 'v500', 'v250', 'z1000', 'z850', 'z500', 'z250', 't1000', 't850', 't500', 't250', 'q1000', 'q850', 'q500', 'q250']
+in_channels: ["u500", "v500", "z500", "t500", "u850", "v850", "z850", "t850", "u10m", "v10m", "t2m", "tcwv"]
+# in_channels: ['u10m', 'v10m', 't2m', 'tcwv', 'sp', 'msl', 'u1000', 'u850', 'u500', 'u250', 'v1000', 'v850', 'v500', 'v250', 'z1000', 'z850', 'z500', 'z250', 't1000', 't850', 't500', 't250', 'q1000', 'q850', 'q500', 'q250']
+train_test_split: true
+overfit: False
+# use_all: True
+all_times: True

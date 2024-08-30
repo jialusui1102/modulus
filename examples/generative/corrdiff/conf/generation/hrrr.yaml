@@ -1,0 +1,393 @@
+# SPDX-FileCopyrightText: Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES.
+# SPDX-FileCopyrightText: All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+# SPDX-FileCopyrightText: Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES.
+# SPDX-FileCopyrightText: All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+num_ensembles: 64
+  # Number of ensembles to generate per input
+seed_batch_size: 4
+  # Size of the batched inference
+inference_mode: all #all
+  # Choose between "all" (regression + diffusion), "regression" or "diffusion"
+sample_res: "full"
+  # Sampling resolution
+
+
+## Data options
+patch_size: 448
+patch_shape_x: 448
+patch_shape_y: 448
+  # Patch size. Patch-based sampling will be utilized if these dimensions differ from 
+  # img_shape_x and img_shape_y
+overlap_pixels: 28 
+  # Number of overlapping pixels between adjacent patches
+boundary_pixels: 2
+  # Number of boundary pixels to be cropped out. 2 is recommanded to address the boundary
+  # artifact.
+hr_mean_conditioning: true
+  # High-res mean (regression's output) as additional condition
+gridtype: "learnable"
+N_grid_channels: 100
+
+##
+
+  # Sampling resolution
+times_range: null
+#Hurricane
+# time_range: ["2022-09-26T12:00:00", "2022-09-29T12:00:00"]
+times:
+  - 2022-11-03T04:00:00
+  - 2022-01-18T19:00:00
+  - 2022-06-25T03:00:00
+  - 2022-02-08T23:00:00
+  - 2022-06-13T01:00:00
+  - 2022-04-22T06:00:00
+  - 2022-06-11T11:00:00
+  - 2022-03-25T06:00:00
+  - 2022-04-26T23:00:00
+  - 2022-08-12T07:00:00
+  - 2022-04-07T16:00:00
+  - 2022-09-22T04:00:00
+  - 2022-02-18T04:00:00
+  - 2022-12-12T21:00:00
+  - 2022-05-20T10:00:00
+  - 2022-07-15T02:00:00
+  - 2022-02-06T12:00:00
+  - 2022-04-08T02:00:00
+  - 2022-03-15T21:00:00
+  - 2022-06-02T00:00:00
+  - 2022-07-11T04:00:00
+  - 2022-01-03T23:00:00
+  - 2022-02-25T23:00:00
+  - 2022-06-10T18:00:00
+  - 2022-06-03T20:00:00
+  - 2022-05-31T09:00:00
+  - 2022-03-29T16:00:00
+  - 2022-01-16T09:00:00
+  - 2022-01-18T23:00:00
+  - 2022-04-13T23:00:00
+  - 2022-02-10T02:00:00
+  - 2022-09-01T16:00:00
+  - 2022-09-29T06:00:00
+  - 2022-06-09T03:00:00
+  - 2022-05-17T08:00:00
+  - 2022-09-22T13:00:00
+  - 2022-10-08T11:00:00
+  - 2022-05-28T03:00:00
+  - 2022-09-17T00:00:00
+  - 2022-08-04T17:00:00
+  - 2022-04-16T15:00:00
+  - 2022-08-17T06:00:00
+  - 2022-12-29T03:00:00
+  - 2022-05-19T00:00:00
+  - 2022-05-08T12:00:00
+  - 2022-09-12T20:00:00
+  - 2022-07-03T09:00:00
+  - 2022-12-28T21:00:00
+  - 2022-03-24T01:00:00
+  - 2022-06-07T13:00:00
+  - 2022-03-28T12:00:00
+  - 2022-07-18T09:00:00
+  - 2022-02-01T14:00:00
+  - 2022-10-06T19:00:00
+  - 2022-07-02T19:00:00
+  - 2022-07-01T07:00:00
+  - 2022-06-01T00:00:00
+  - 2022-10-14T16:00:00
+  - 2022-02-06T10:00:00
+  - 2022-03-11T01:00:00
+  - 2022-09-03T02:00:00
+  - 2022-11-04T22:00:00
+  - 2022-02-19T08:00:00
+  - 2022-09-03T21:00:00
+  - 2022-01-31T21:00:00
+  - 2022-05-02T00:00:00
+  - 2022-04-02T10:00:00
+  - 2022-12-06T01:00:00
+  - 2022-09-30T19:00:00
+  - 2022-02-28T01:00:00
+  - 2022-04-01T20:00:00
+  - 2022-11-23T13:00:00
+  - 2022-06-30T17:00:00
+  - 2022-11-14T07:00:00
+  - 2022-10-10T11:00:00
+  - 2022-09-18T11:00:00
+  - 2022-03-11T06:00:00
+  - 2022-02-24T03:00:00
+  - 2022-02-17T03:00:00
+  - 2022-10-26T16:00:00
+  - 2022-02-15T09:00:00
+  - 2022-02-19T07:00:00
+  - 2022-09-30T03:00:00
+  - 2022-10-22T04:00:00
+  - 2022-09-22T19:00:00
+  - 2022-01-28T13:00:00
+  - 2022-10-10T00:00:00
+  - 2022-07-27T20:00:00
+  - 2022-08-08T12:00:00
+  - 2022-01-19T15:00:00
+  - 2022-08-14T16:00:00
+  - 2022-04-08T23:00:00
+  - 2022-02-26T16:00:00
+  - 2022-10-03T16:00:00
+  - 2022-05-28T22:00:00
+  - 2022-02-10T09:00:00
+  - 2022-10-14T02:00:00
+  - 2022-10-16T02:00:00
+  - 2022-05-31T01:00:00
+  - 2022-01-07T02:00:00
+
+perf:
+  force_fp16: true
+    # Whether to force fp16 precision for the model. If false, it'll use the precision
+    # specified upon training.
+  use_torch_compile: True
+    # whether to use torch.compile on the diffusion model
+    # this will make the first time stamp generation very slow due to compilation overheads
+    # but will significantly speed up subsequent inference runs
+  num_writer_workers: 1
+    # number of workers to use for writing file
+    # To support multiple workers a threadsafe version of the netCDF library must be used
+
+
+io:
+  res_ckpt_filename: /code/modulus/examples/generative/corrdiff/outputs/patched_diffusion/checkpoints_patched_diffusion/EDMPrecondSR.0.6000128.mdlus
+    # Checkpoint filename for the diffusion model  
+  reg_ckpt_filename: /lustre/fsw/coreai_climate_earth2/nealp/hrrr_reg_reslossv2/training-state-regression-000513.mdlus
+    # Checkpoint filename for the mean predictor model
+
+
+
+
+# hydra:
+#   job:
+#     chdir: False
+
+
+# ## Main options
+# res_ckpt_filename: "/code/modulus_baseline/examples/generative/corrdiff/output_diffusion_reslossv2/training-state-diffusion-015317.mdlus"   
+#   # Checkpoint filename for the generative model  
+# reg_ckpt_filename: "/code/hrrr_reg_reslossv2/training-state-regression-000513.mdlus"
+#   # Checkpoint filename for the mean predictor model
+# image_outdir: "image_outdir_hrrr_reslossv2"
+#   # Where to save the output images
+# seeds: "0-31"
+#   # Random seeds used for generation
+# class_idx: null  
+#   # Class label. Null is random
+# num_steps: 18
+#   # Number of sampling steps
+# sample_res: "full"
+#   # Sampling resolution
+# regression_only: false
+#   # regression only inference
+# diffusion_only: false
+#   # diffusion only inference
+# sampling_method: stochastic
+#   # Sampling method ["stochastic", "deterministic"]
+# seed_batch_size: 4
+  # batch size across the seed dimension
+# force_fp16: true
+#   # Whether to force fp16 precision for the model. If false, it'll use the precision
+#   # specified upon training.
+# num_writer_workers: 1
+#   # number of workers to use for writing file
+#   # To support multiple workers a threadsafe version of the netCDF library must be used
+# use_torch_compile: True
+  # whether to use torch.compile on the diffusion model
+  # this will make the first time stamp generation very slow due to compilation overheads
+  # but will significantly speed up subsequent inference runs
+
+# ## Data options
+# patch_shape_x: 448
+# patch_shape_y: 448
+#   # Patch size. Patch-based sampling will be utilized if these dimensions differ from 
+#   # img_shape_x and img_shape_y
+# overlap_pixels: 28 
+#   # Number of overlapping pixels between adjacent patches
+# boundary_pixels: 2
+#   # Number of boundary pixels to be cropped out. 2 is recommanded to address the boundary
+#   # artifact.
+# hr_mean_conditioning: true
+#   # High-res mean (regression's output) as additional condition
+# gridtype: "learnable"
+# N_grid_channels: 100
+
+#Hurricane
+# time_range: ["2022-09-26T12:00:00", "2022-09-29T12:00:00"]
+# times:
+#   - 2022-11-03T04:00:00
+#   - 2022-01-18T19:00:00
+#   - 2022-06-25T03:00:00
+#   - 2022-02-08T23:00:00
+#   - 2022-06-13T01:00:00
+#   - 2022-04-22T06:00:00
+#   - 2022-06-11T11:00:00
+#   - 2022-03-25T06:00:00
+#   - 2022-04-26T23:00:00
+#   - 2022-08-12T07:00:00
+#   - 2022-04-07T16:00:00
+#   - 2022-09-22T04:00:00
+#   - 2022-02-18T04:00:00
+#   - 2022-12-12T21:00:00
+#   - 2022-05-20T10:00:00
+#   - 2022-07-15T02:00:00
+#   - 2022-02-06T12:00:00
+#   - 2022-04-08T02:00:00
+#   - 2022-03-15T21:00:00
+#   - 2022-06-02T00:00:00
+#   - 2022-07-11T04:00:00
+#   - 2022-01-03T23:00:00
+#   - 2022-02-25T23:00:00
+#   - 2022-06-10T18:00:00
+#   - 2022-06-03T20:00:00
+#   - 2022-05-31T09:00:00
+#   - 2022-03-29T16:00:00
+#   - 2022-01-16T09:00:00
+#   - 2022-01-18T23:00:00
+#   - 2022-04-13T23:00:00
+#   - 2022-02-10T02:00:00
+#   - 2022-09-01T16:00:00
+#   - 2022-09-29T06:00:00
+#   - 2022-06-09T03:00:00
+#   - 2022-05-17T08:00:00
+#   - 2022-09-22T13:00:00
+#   - 2022-10-08T11:00:00
+#   - 2022-05-28T03:00:00
+#   - 2022-09-17T00:00:00
+#   - 2022-08-04T17:00:00
+#   - 2022-04-16T15:00:00
+#   - 2022-08-17T06:00:00
+#   - 2022-12-29T03:00:00
+#   - 2022-05-19T00:00:00
+#   - 2022-05-08T12:00:00
+#   - 2022-09-12T20:00:00
+#   - 2022-07-03T09:00:00
+#   - 2022-12-28T21:00:00
+#   - 2022-03-24T01:00:00
+#   - 2022-06-07T13:00:00
+#   - 2022-03-28T12:00:00
+#   - 2022-07-18T09:00:00
+#   - 2022-02-01T14:00:00
+#   - 2022-10-06T19:00:00
+#   - 2022-07-02T19:00:00
+#   - 2022-07-01T07:00:00
+#   - 2022-06-01T00:00:00
+#   - 2022-10-14T16:00:00
+#   - 2022-02-06T10:00:00
+#   - 2022-03-11T01:00:00
+#   - 2022-09-03T02:00:00
+#   - 2022-11-04T22:00:00
+#   - 2022-02-19T08:00:00
+#   - 2022-09-03T21:00:00
+#   - 2022-01-31T21:00:00
+#   - 2022-05-02T00:00:00
+#   - 2022-04-02T10:00:00
+#   - 2022-12-06T01:00:00
+#   - 2022-09-30T19:00:00
+#   - 2022-02-28T01:00:00
+#   - 2022-04-01T20:00:00
+#   - 2022-11-23T13:00:00
+#   - 2022-06-30T17:00:00
+#   - 2022-11-14T07:00:00
+#   - 2022-10-10T11:00:00
+#   - 2022-09-18T11:00:00
+#   - 2022-03-11T06:00:00
+#   - 2022-02-24T03:00:00
+#   - 2022-02-17T03:00:00
+#   - 2022-10-26T16:00:00
+#   - 2022-02-15T09:00:00
+#   - 2022-02-19T07:00:00
+#   - 2022-09-30T03:00:00
+#   - 2022-10-22T04:00:00
+#   - 2022-09-22T19:00:00
+#   - 2022-01-28T13:00:00
+#   - 2022-10-10T00:00:00
+#   - 2022-07-27T20:00:00
+#   - 2022-08-08T12:00:00
+#   - 2022-01-19T15:00:00
+#   - 2022-08-14T16:00:00
+#   - 2022-04-08T23:00:00
+#   - 2022-02-26T16:00:00
+#   - 2022-10-03T16:00:00
+#   - 2022-05-28T22:00:00
+#   - 2022-02-10T09:00:00
+#   - 2022-10-14T02:00:00
+#   - 2022-10-16T02:00:00
+#   - 2022-05-31T01:00:00
+#   - 2022-01-07T02:00:00
+
+
+# ## Weather data options
+# dataset:
+#   type: "hrrr"
+#   data_path: "/us_data/downscaling"
+#   ds_factor: 4
+#   train: False
+#   train_years: [2017, 2018, 2019, 2020, 2021]
+#   valid_years: [2022]
+#   hrrr_window: [[1,1057], [4,1796]] # need dims to be divisible by 16
+#   sample_shape: null  # 1024,1024 w/ 1 batch 4 hrrr channels and all era5 channels is 77gb
+#   # avail
+#   # ['2t', '10u', '10v', 'refc', 'gust', '2d', '2r', 'tp', 'cape', 'cin', 'tcc', 'dswrf', 'dlwrf', 'vbdsf', 'veril', 'hpbl']
+#   # 2022 doesn't have the full set of variables
+#   # only ['10u', '10v', '2t', 'tp', 'refc'], tp has NaNs, should be 0?
+#   out_channels: ["refc", "2t", "10u", "10v"]
+#   # avail 
+#   # ['u10m', 'v10m', 't2m', 'tcwv', 'sp', 'msl', 'u1000', 'u850', 'u500', 'u250', 'v1000', 'v850', 'v500', 'v250', 'z1000', 'z850', 'z500', 'z250', 't1000', 't850', 't500', 't250', 'q1000', 'q850', 'q500', 'q250']
+#   in_channels:  ["u500", "v500", "z500", "t500", "u850", "v850", "z850", "t850", "u10m", "v10m", "t2m", "tcwv"]
+#   overfit: False
+#   use_all: True
+  
+
+# ## Deterministic sampler options
+# sigma_min: null
+#   # Lowest noise level
+# sigma_max: null
+#   # Highest noise level
+# rho: 7
+#   # Time step exponent
+# solver: euler
+#   # ODE solver [euler, heun]
+# discretization: "edm"
+#   # Time step discretization [vp, ve, iddpm, edm]
+# schedule: "linear"
+#   # noise schedule sigma(t) [vp, ve, linear]
+# scaling: null
+#   # Signal scaling s(t) [vp, none]
+# S_churn: 0.5
+#   # Stochasticity strength
+# S_min: 0
+#   # Stochasticity min noise level
+# S_max: .inf 
+#   # Stochasticity max noise level
+# S_noise: 1
+#   # Stochasticity noise inflation

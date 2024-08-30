@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import pdb
 import os, time, psutil, hydra, torch
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
@@ -35,15 +35,26 @@ from helpers.train_helpers import (
     handle_and_clip_gradients,
     is_time_for_periodic_task,
 )
+import wandb
+
 
 
 # Train the CorrDiff model using the configurations in "conf/config_training.yaml"
 @hydra.main(version_base="1.2", config_path="conf", config_name="config_training")
 def main(cfg: DictConfig) -> None:
 
+
     # Initialize distributed environment for training
     DistributedManager.initialize()
     dist = DistributedManager()
+
+#    Initialize a new WandB run
+    if dist.rank == 0:
+        wandb.login(key="56d6b1c55cf68cebc9129d638c9dba7987a4af51")
+        wandb.init( project="patched_corrdiff",
+                    resume="allow",             # Options: 'allow', 'must', 'never'
+                    id="f09dy01p"            # The run ID of the process you want to resume)
+                )
 
     # Initialize loggers
     if dist.rank == 0:
@@ -51,6 +62,7 @@ def main(cfg: DictConfig) -> None:
     logger = PythonLogger("main")  # General python logger
     logger0 = RankZeroLoggingWrapper(logger, dist)  # Rank 0 logger
 
+    print("Total number of gpu is",dist.world_size)
     # Resolve and parse configs
     OmegaConf.resolve(cfg)
     dataset_cfg = OmegaConf.to_container(cfg.dataset)  # TODO needs better handling
@@ -92,6 +104,7 @@ def main(cfg: DictConfig) -> None:
     img_in_channels = dataset_channels
     img_shape = dataset.image_shape()
     img_out_channels = len(dataset.output_channels())
+    
     if cfg.model.hr_mean_conditioning:
         img_in_channels += img_out_channels
 
@@ -137,6 +150,8 @@ def main(cfg: DictConfig) -> None:
             "N_grid_channels": 100,
         },
     }
+    
+
     model_args.update(standard_model_cfgs[cfg.model.name])
     if hasattr(cfg.model, "model_args"):  # override defaults from config file
         model_args.update(OmegaConf.to_container(cfg.model.model_args))
@@ -177,6 +192,16 @@ def main(cfg: DictConfig) -> None:
 
     # Instantiate the loss function
     patch_num = getattr(cfg.training.hp, "patch_num", 1)
+    #----------------------------------------#
+    # print("printing model parameters.........\n")
+    # print("img_in_channels is",img_in_channels)
+    # print("img_out_channels is",img_out_channels)
+    # print("img shape is",img_shape)
+    # print("patch shape is",patch_shape)
+    # print("patch num is",patch_num)
+
+    # pdb.set_trace()
+
     if cfg.model.name in ("diffusion", "patched_diffusion"):
         loss_fn = ResLoss(
             regression_net=regression_net,
@@ -205,11 +230,22 @@ def main(cfg: DictConfig) -> None:
         cfg.training.hp.batch_size_per_gpu,
         dist.world_size,
     )
-    logger0.info(f"Using {num_accumulation_rounds} gradient accumulation rounds")
 
+    #added this for correct loss scaling
+    batch_size_per_gpu = cfg.training.hp.batch_size_per_gpu
+    logger0.info(f"Using {num_accumulation_rounds} gradient accumulation rounds")
+    logger0.info(f"Batch GPU total is {batch_gpu_total}")
+    logger0.info(f"Total GPU is {dist.world_size}")
+    # print("---------------print batch info----------------")
+    # print("batch gpu is",batch_gpu_total)
+    # print("accum rounds is", num_accumulation_rounds)
     ## Resume training from previous checkpoints if exists
     if dist.world_size > 1:
         torch.distributed.barrier()
+    
+    #disable checkpoint loading
+    # cur_nimg = 0
+
     try:
         cur_nimg = load_checkpoint(
             path=f"checkpoints_{cfg.model.name}",
@@ -232,11 +268,15 @@ def main(cfg: DictConfig) -> None:
         # Compute & accumulate gradients
         optimizer.zero_grad(set_to_none=True)
         loss_accum = 0
-        for _ in range(num_accumulation_rounds):
+        for _ in range(num_accumulation_rounds): #2 rounds, in each round, mini batch is 2
             img_clean, img_lr, labels = next(dataset_iterator)
             img_clean = img_clean.to(dist.device).to(torch.float32).contiguous()
             img_lr = img_lr.to(dist.device).to(torch.float32).contiguous()
             labels = labels.to(dist.device).contiguous()
+            # print("-----------------printing image infos in training loops------------------")
+            # print("image clean shape is",img_clean.shape)
+            # print("image low res shape is",img_lr.shape)
+            # print("labels shape is",labels.shape)
             with torch.autocast("cuda", dtype=amp_dtype, enabled=enable_amp):
                 loss = loss_fn(
                     net=model,
@@ -245,17 +285,34 @@ def main(cfg: DictConfig) -> None:
                     labels=labels,
                     augment_pipe=None,
                 )
-            loss = loss.sum() / batch_gpu_total
+           
+            # logger0.info(f"Loss shape is {loss.shape}")
+            # logger0.info(f"data shape in a mini batch is {img_clean.shape}")
+            
+            # loss = loss.sum() / batch_gpu_total
+            loss = loss.sum() / batch_size_per_gpu
+
+            #try this in older version -  no difference in loss
+            # loss = loss.sum().mul(1 / batch_gpu_total)
+            # logger0.info(f"loss right after loss func is {loss} for gpu {dist.rank}")
+            
             loss_accum += loss / num_accumulation_rounds
+            
             loss.backward()
 
-        loss_sum = torch.tensor([loss_accum], device=dist.device)
+        loss_sum = torch.tensor([loss_accum], device=dist.device) # total loss for a single gpu???
+        # if dist.rank == 0:
+        # logger0.info(f"Training loss on single GPU {dist.rank} before sync is {loss_sum.item()}")
         if dist.world_size > 1:
             torch.distributed.barrier()
             torch.distributed.all_reduce(loss_sum, op=torch.distributed.ReduceOp.SUM)
+        # if dist.rank == 0:
+        #     logger0.info(f"Training loss after sync is {loss_sum.item()}")
+
         average_loss = (loss_sum / dist.world_size).cpu().item()
         if dist.rank == 0:
             writer.add_scalar("training_loss", average_loss, cur_nimg)
+            wandb.log({"training loss": average_loss})
 
         # Update weights.
         lr_rampup = cfg.training.hp.lr_rampup  # ramp up the learning rate
@@ -266,15 +323,23 @@ def main(cfg: DictConfig) -> None:
             current_lr = g["lr"]
             if dist.rank == 0:
                 writer.add_scalar("learning_rate", current_lr, cur_nimg)
+                wandb.log({"lr": current_lr})
         handle_and_clip_gradients(
             model, grad_clip_threshold=cfg.training.hp.grad_clip_threshold
         )
         optimizer.step()
-
+        
+        # if dist.rank==0:
+        #     print("for gpu 0, cur_nimg is ",cur_nimg)
+        #     print("total batch size in cfg is", cfg.training.hp.total_batch_size)
         cur_nimg += cfg.training.hp.total_batch_size
+        # print("-------cur_nimg is,", cur_nimg, "---------")
         done = cur_nimg >= cfg.training.hp.training_duration
+        
 
         # Validation
+        if validation_dataset_iterator is None:
+            logger0.info("Validation is None")
         if validation_dataset_iterator is not None:
             valid_loss_accum = 0
             if is_time_for_periodic_task(
@@ -306,7 +371,9 @@ def main(cfg: DictConfig) -> None:
                             labels=labels_valid,
                             augment_pipe=None,
                         )
-                        loss_valid = (loss_valid.sum() / batch_gpu_total).cpu().item()
+                        # loss_valid = (loss_valid.sum() / batch_gpu_total).cpu().item()
+                        loss_valid = (loss_valid.sum() / batch_size_per_gpu).cpu().item()
+
                         valid_loss_accum += (
                             loss_valid / cfg.training.io.validation_steps
                         )
@@ -323,6 +390,8 @@ def main(cfg: DictConfig) -> None:
                         writer.add_scalar(
                             "validation_loss", average_valid_loss, cur_nimg
                         )
+                        wandb.log({"validation loss": average_valid_loss})
+
 
         if is_time_for_periodic_task(
             cur_nimg,
@@ -366,12 +435,14 @@ def main(cfg: DictConfig) -> None:
             dist.rank,
             rank_0_only=True,
         ):
+            logger0.info("Saving checkpoints")
             save_checkpoint(
                 path=f"checkpoints_{cfg.model.name}",
                 models=model,
                 optimizer=optimizer,
                 epoch=cur_nimg,
             )
+            # logger0.info("Saving checkpoints")
 
     # Done.
     logger0.info("Training Completed.")
