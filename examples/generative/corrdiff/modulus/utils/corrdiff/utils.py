@@ -104,7 +104,6 @@ def diffusion_step(  # TODO generalize the module and add defaults
     if hr_mean is not None:
 
         additional_args["mean_hr"] = hr_mean
-
     # Loop over batches
     all_images = []
     for batch_seeds in tqdm.tqdm(rank_batches, unit="batch", disable=(rank != 0)):
@@ -131,6 +130,7 @@ def diffusion_step(  # TODO generalize the module and add defaults
                 images = sampler_fn(
                     net, latents, img_lr, randn_like=rnd.randn_like, **additional_args
                 )
+                # pdb.set_trace()
             all_images.append(images)
     return torch.cat(all_images)
 

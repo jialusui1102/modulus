@@ -67,7 +67,8 @@ def image_batching(
     Tensor
         A tensor containing the image patches, with shape (total_patches * batch_size, channels [+ interp_channels], patch_shape_x, patch_shape_y).
     """
-    
+    #img_shape_x and img_shape_y are both 1792?
+    # all patches and images have reversed y and x
     patch_num_x = math.ceil(img_shape_x / (patch_shape_x - overlap_pix - boundary_pix))
     patch_num_y = math.ceil(img_shape_y / (patch_shape_y - overlap_pix - boundary_pix))
     padded_shape_x = (
@@ -83,7 +84,9 @@ def image_batching(
     pad_x_right = padded_shape_x - img_shape_x - boundary_pix
     pad_y_right = padded_shape_y - img_shape_y - boundary_pix
     input_padded = torch.zeros(
-        input.shape[0], input.shape[1], padded_shape_x, padded_shape_y
+        # input.shape[0], input.shape[1], padded_shape_x, padded_shape_y
+        input.shape[0], input.shape[1], padded_shape_y, padded_shape_x
+
     ).cuda()
     image_padding = torch.nn.ReflectionPad2d(
         (boundary_pix, pad_x_right, boundary_pix, pad_y_right)
@@ -94,19 +97,32 @@ def image_batching(
         output = torch.zeros(
             patch_num * batch_size,
             input.shape[1] + input_interp.shape[1],
-            patch_shape_x,
+            # patch_shape_x,
+            # patch_shape_y,
             patch_shape_y,
+            patch_shape_x,
         ).cuda()
     else:
         output = torch.zeros(
-            patch_num * batch_size, input.shape[1], patch_shape_x, patch_shape_y
+            # patch_num * batch_size, input.shape[1], patch_shape_x, patch_shape_y
+            patch_num * batch_size, input.shape[1], patch_shape_y, patch_shape_x
         ).cuda()
+    #reversed x and y: change here
     for x_index in range(patch_num_x):
         for y_index in range(patch_num_y):
             x_start = x_index * (patch_shape_x - overlap_pix - boundary_pix)
             y_start = y_index * (patch_shape_y - overlap_pix - boundary_pix)
-            pdb.set_trace()
+            # pdb.set_trace()
             if input_interp is not None:
+                # add testing code below:
+                # input_slice = input_padded[
+                #             :,
+                #             :,
+                #             x_start : x_start + patch_shape_x,
+                #             y_start : y_start + patch_shape_y,
+                #         ]
+                # if (input_slice.shape[2] != input_interp.shape[2]) or (input_slice.shape[3] != input_interp.shape[3]):
+                #     pdb.set_trace()
                 output[
                     (x_index * patch_num_x + y_index)
                     * batch_size : (x_index * patch_num_x + y_index + 1)
@@ -116,8 +132,10 @@ def image_batching(
                         input_padded[
                             :,
                             :,
-                            x_start : x_start + patch_shape_x,
+                            # x_start : x_start + patch_shape_x,
+                            # y_start : y_start + patch_shape_y,
                             y_start : y_start + patch_shape_y,
+                            x_start : x_start + patch_shape_x,
                         ],
                         input_interp,
                     ),
@@ -131,8 +149,10 @@ def image_batching(
                 ] = input_padded[
                     :,
                     :,
-                    x_start : x_start + patch_shape_x,
+                    # x_start : x_start + patch_shape_x,
+                    # y_start : y_start + patch_shape_y,
                     y_start : y_start + patch_shape_y,
+                    x_start : x_start + patch_shape_x,
                 ]
     return output
 
@@ -285,15 +305,19 @@ def image_fuse(
                 ]
     return output / count_map
 
-
+#need more parameters for x and y
 def stochastic_sampler(
     net: Any,
     latents: Tensor,
     img_lr: Tensor,
     class_labels: Optional[Tensor] = None,
     randn_like: Callable[[Tensor], Tensor] = torch.randn_like,
-    img_shape: int = 448,
-    patch_shape: int = 448,
+    # img_shape: int = 448,
+    # patch_shape: int = 448,
+    img_shape_x: int = 448,
+    img_shape_y: int = 448,
+    patch_shape_x: int = 448,
+    patch_shape_y: int = 448,
     overlap_pix: int = 4,
     boundary_pix: int = 2,
     mean_hr: Optional[Tensor] = None,
@@ -372,8 +396,10 @@ def stochastic_sampler(
     )  # t_N = 0
 
     b = latents.shape[0]
-    Nx = torch.arange(img_shape)
-    Ny = torch.arange(img_shape)
+    # Nx = torch.arange(img_shape)
+    # Ny = torch.arange(img_shape)
+    Nx = torch.arange(img_shape_x)
+    Ny = torch.arange(img_shape_y)
     grid = torch.stack(torch.meshgrid(Nx, Ny, indexing="ij"), dim=0)[
         None,
     ].expand(b, -1, -1, -1)

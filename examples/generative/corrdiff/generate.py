@@ -31,7 +31,7 @@ from torch.distributed import gather
 
 
 from hydra.utils import to_absolute_path
-from modulus.utils.generative import deterministic_sampler, stochastic_sampler
+from modulus.utils.generative import deterministic_sampler, stochastic_sampler, edm_sampler
 from modulus.utils.corrdiff import (
     NetCDFWriter,
     get_time_from_range,
@@ -64,19 +64,23 @@ def main(cfg: DictConfig) -> None:
     logger.file_logging("generate.log")
 
     # Handle the batch size
+    #num_ensembles = world_size * seed_batch_size
     seeds = list(np.arange(cfg.generation.num_ensembles))
     num_batches = (
         (len(seeds) - 1) // (cfg.generation.seed_batch_size * dist.world_size) + 1
     ) * dist.world_size
     all_batches = torch.as_tensor(seeds).tensor_split(num_batches)
     rank_batches = all_batches[dist.rank :: dist.world_size]
+    print(f"total number of gpu is {dist.world_size}")
+    print(f"on gpu {dist.rank}, rank batches is {rank_batches}")
 
     # Synchronize
     if dist.world_size > 1:
         torch.distributed.barrier()
 
     # Parse the inference input times
-    if cfg.generation.times_range and times:
+    # if cfg.generation.times_range and times:
+    if cfg.generation.times_range and cfg.generation.times:
         raise ValueError("Either times_range or times must be provided, but not both")
     if cfg.generation.times_range:
         times = get_time_from_range(cfg.generation.times_range)
@@ -209,8 +213,10 @@ def main(cfg: DictConfig) -> None:
         )
     elif cfg.sampler.type == "stochastic":
         sampler_fn = partial(
-            stochastic_sampler,
-            img_shape=img_shape[1],
+            # stochastic_sampler,
+            edm_sampler,
+            # img_shape=img_shape[1],
+            img_shape = (img_shape[1],img_shape[0]),
             patch_shape=patch_shape[1],
             boundary_pix=cfg.sampler.boundary_pix,
             overlap_pix=cfg.sampler.overlap_pix,
@@ -234,6 +240,7 @@ def main(cfg: DictConfig) -> None:
                 )
                 torch.cuda.nvtx.range_pop()
             image_lr_patch = image_lr_patch.to(memory_format=torch.channels_last)
+            
 
             if net_reg:
                 with nvtx.annotate("regression_model", color="yellow"):
@@ -249,6 +256,7 @@ def main(cfg: DictConfig) -> None:
                             img_shape[1],
                         ),
                     )
+                    # pdb.set_trace()
             if net_res:
                 if cfg.generation.hr_mean_conditioning:
                     mean_hr = image_reg[0:1]
@@ -274,6 +282,13 @@ def main(cfg: DictConfig) -> None:
             elif cfg.generation.inference_mode == "diffusion":
                 image_out = image_res
             else:
+                # pdb.set_trace()
+                """
+                (Pdb) p image_reg.shape
+                torch.Size([4, 4, 1056, 1792])
+                (Pdb) p image_res.shape
+                torch.Size([64, 4, 1056, 1792])
+                """
                 image_out = image_reg + image_res
 
             if cfg.generation.sample_res != "full":
