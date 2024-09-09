@@ -130,7 +130,6 @@ def diffusion_step(  # TODO generalize the module and add defaults
                 images = sampler_fn(
                     net, latents, img_lr, randn_like=rnd.randn_like, **additional_args
                 )
-                # pdb.set_trace()
             all_images.append(images)
     return torch.cat(all_images)
 

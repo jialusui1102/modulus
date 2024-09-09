@@ -117,7 +117,8 @@ args = parser.parse_args()
 def main():
     """Plot single sample"""
     file = "/us_data/downscaling/hrrr/2022.zarr"
-    res_url_base = "../image_outdir_hrrr_reslossv2_9M_casestudy_2_0.nc"
+    # res_url_base = "../image_outdir_hrrr_reslossv2_9M_casestudy_2_0.nc"
+    res_url_base = "../outputs/generation/output_0.nc"
     
     # txt_msg = "reg_ckpt:/code/hrrr_reg/training-state-regression-000534.mdlus"
     # txt_msg = "reg_ckpt:/code/hrrr_reg/training-state-regression-000534.mdlus" + "\n" + "res_ckpt:/code/modulus_hrrr/examples/generative/corrdiff/output_diffusion/training-state-diffusion-008405.mdlus"

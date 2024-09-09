@@ -8,6 +8,19 @@
 import numpy as np
 import torch
 import math
+import pdb
+
+def has_nan_torch(tensor):
+    """
+    Checks if there are any NaN values in a PyTorch tensor.
+    
+    Parameters:
+        tensor (torch.Tensor): The input tensor.
+    
+    Returns:
+        bool: True if any value is NaN, False otherwise.
+    """
+    return torch.isnan(tensor).any().item()
 
 def image_batching(input, 
         img_shape_y, 
@@ -213,7 +226,7 @@ def edm_sampler(
             denoised = image_fuse(denoised, img_shape_y, img_shape_x, patch_shape, patch_shape, batch_size, overlap_pix, boundary_pix)     
         d_cur = (x_hat - denoised) / t_hat
         x_next = x_hat + (t_next - t_hat) * d_cur
-
+        # pdb.set_trace()
         # Apply 2nd order correction.
         if i < num_steps - 1:
             if (patch_shape!=img_shape_x or patch_shape!=img_shape_y):
@@ -221,6 +234,7 @@ def edm_sampler(
             else:
                 x_next_batch = x_next
             # ask about this fix
+            # pdb.set_trace()
             x_next_batch = x_next_batch.to(latents.device)
             # denoised = net(x_next_batch, x_lr, t_next, class_labels, lead_time_label=lead_time_label,global_index=global_index).to(torch.float64)
             denoised = net(x_next_batch, x_lr, t_next, class_labels, global_index=global_index).to(torch.float64)
@@ -228,5 +242,6 @@ def edm_sampler(
                 denoised = image_fuse(denoised, img_shape_y, img_shape_x, patch_shape, patch_shape, batch_size, overlap_pix, boundary_pix)
             d_prime = (x_next - denoised) / t_next
             x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
+            # pdb.set_trace()
     return x_next
     

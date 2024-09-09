@@ -13,6 +13,7 @@ import torchvision.transforms as transforms
 import scipy
 import json
 import typer
+import pdb
 
 def open_data(file, group=False):
     """
@@ -51,11 +52,17 @@ def array_to_list(obj):
     else:
         return obj
 
+# limits = {
+#     "maximum_radar_reflectivity": (0, 70),
+#     "temperature_2m": (266, 310),
+#     "eastward_wind_10m": (-50, 50),
+#     "northward_wind_10m": (-50, 50),
+# }
 limits = {
-    "maximum_radar_reflectivity": (0, 70),
-    "temperature_2m": (266, 310),
-    "eastward_wind_10m": (-50, 50),
-    "northward_wind_10m": (-50, 50),
+    "refc": (0, 70),
+    "2t": (266, 310),
+    "10u": (-50, 50),
+    "10v": (-50, 50),
 }
 
 # Load the pre-trained InceptionV3 model
@@ -106,9 +113,17 @@ def main(file, output, save_data=True, n_ensemble: int = -1):
     truth_fields = open_data(file, group="truth")
 
     fid = {}
+    print("limits is",limits)
+    print("truth field", truth_fields)
     for field in limits:
+        pdb.set_trace()
         truth = truth_fields[field].values
-        pred = pred_fields[field][0].values
+        # print("truth shape",truth_fields[field].shape)
+        print("truth is", truth)
+        # pred = pred_fields[field][0].values
+        pred = pred_fields[field].values
+        # print("pred shape",pred_fields[field].s)
+        print("pred", pred)
 
         mu_ref, sigma_ref = get_mean_sigma(normalize(truth, field))
         mu, sigma = get_mean_sigma(normalize(pred, field))

@@ -16,4 +16,4 @@
 
 type: stochastic
 boundary_pix: 2
-overlap_pix: 0
+overlap_pix: 28

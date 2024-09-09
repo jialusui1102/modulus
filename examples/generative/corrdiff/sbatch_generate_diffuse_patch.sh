@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH -A coreai_climate_earth2
 #SBATCH -J coreai_climate_earth2-corrdiff:patch_generate
-#SBATCH -t 02:10:00
+#SBATCH -t 03:10:00
 #SBATCH -p batch
 #SBATCH -N 1
 #SBATCH --dependency=singleton
-#SBATCH -o ./sbatch_logs/train/%x_%j.out
-#SBATCH -e ./sbatch_logs/train/%x_%j.err
+#SBATCH -o ./sbatch_logs/generate/%x_%j.out
+#SBATCH -e ./sbatch_logs/generate/%x_%j.err
 #SBATCH --exclusive
 
 # be sure we define everything

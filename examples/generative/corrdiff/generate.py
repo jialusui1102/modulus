@@ -256,7 +256,6 @@ def main(cfg: DictConfig) -> None:
                             img_shape[1],
                         ),
                     )
-                    # pdb.set_trace()
             if net_res:
                 if cfg.generation.hr_mean_conditioning:
                     mean_hr = image_reg[0:1]
@@ -282,13 +281,6 @@ def main(cfg: DictConfig) -> None:
             elif cfg.generation.inference_mode == "diffusion":
                 image_out = image_res
             else:
-                # pdb.set_trace()
-                """
-                (Pdb) p image_reg.shape
-                torch.Size([4, 4, 1056, 1792])
-                (Pdb) p image_res.shape
-                torch.Size([64, 4, 1056, 1792])
-                """
                 image_out = image_reg + image_res
 
             if cfg.generation.sample_res != "full":
@@ -378,6 +370,7 @@ def main(cfg: DictConfig) -> None:
                     )
                     image_tar = image_tar.to(device=device).to(torch.float32)
                     image_out = generate_fn()
+                    pdb.set_trace()
 
                     if dist.rank == 0:
                         batch_size = image_out.shape[0]

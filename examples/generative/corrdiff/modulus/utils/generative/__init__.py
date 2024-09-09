@@ -17,7 +17,7 @@
 from .deterministic_sampler import deterministic_sampler
 from .stochastic_sampler import image_batching, image_fuse, stochastic_sampler
 #added import here
-from .edm_sampler import edm_sampler
+from .edm_sampler import image_batching, image_fuse, edm_sampler
 from .utils import (
     EasyDict,
     InfiniteSampler,
