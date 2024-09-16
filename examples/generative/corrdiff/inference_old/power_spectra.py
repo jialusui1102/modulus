@@ -23,6 +23,7 @@ import typer
 import xarray
 from scipy.fft import irfft
 from scipy.signal import periodogram
+import pdb
 
 
 def open_data(file, group=False):
@@ -167,8 +168,8 @@ def load_windspeed_dist(data):
     """
     Calculate the distribution of wind speed from a dataset.
     """
-    northward_wind_10m = data["northward_wind_10m"]
-    eastward_wind_10m = data["eastward_wind_10m"]
+    northward_wind_10m = data["10v"]
+    eastward_wind_10m = data["10u"]
     windspeed_10m = np.sqrt(np.multiply(northward_wind_10m, northward_wind_10m) +
                             np.multiply(eastward_wind_10m, eastward_wind_10m))
 
@@ -244,6 +245,10 @@ def main(file, output, plot=True, save_data=True, n_ensemble: int = -1):
     samples["truth"] = open_data(file, group="truth")
     samples["ERA5"] = open_data(file, group="input")
 
+    #process ERA5 since variable names are different:
+    samples['ERA5'] = samples['ERA5'].rename({'u10m':'10u','v10m':'10v','t2m':'2t'})
+    print("ERA5 data is",samples['ERA5'])
+
     prediction = samples["prediction"]
     lat = prediction.lat
     lon = prediction.lon
@@ -266,21 +271,21 @@ def main(file, output, plot=True, save_data=True, n_ensemble: int = -1):
     reflectivity_distributions = {}
 
     for name, data in samples.items():
-        freqs, spec_x = average_power_spectrum(data.eastward_wind_10m, d=d)
-        _, spec_y = average_power_spectrum(data.northward_wind_10m, d=d)
+        freqs, spec_x = average_power_spectrum(data['10u'], d=d)
+        _, spec_y = average_power_spectrum(data['10v'], d=d)
         spec = spec_x + spec_y
         velocities[name] = (freqs, spec)
-        temperature[name] = average_power_spectrum(data.temperature_2m, d=d)
+        temperature[name] = average_power_spectrum(data['2t'], d=d)
         try:
-            reflectivity[name] = average_power_spectrum(data.maximum_radar_reflectivity, d=d)
+            reflectivity[name] = average_power_spectrum(data.refc, d=d)
         except AttributeError:
             continue
         
         wind_distributions[name] = load_windspeed_dist(data)
-        temperature_distributions[name] = load_dist(data.temperature_2m, 30)
+        temperature_distributions[name] = load_dist(data['2t'], 30)
         try:
             bins = np.linspace(-10, 60, 50)
-            reflectivity_distributions[name] = load_dist(data.maximum_radar_reflectivity, bins)
+            reflectivity_distributions[name] = load_dist(data.refc, bins)
         except AttributeError:
             continue
 

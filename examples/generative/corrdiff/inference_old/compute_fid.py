@@ -116,15 +116,17 @@ def main(file, output, save_data=True, n_ensemble: int = -1):
     print("limits is",limits)
     print("truth field", truth_fields)
     for field in limits:
-        pdb.set_trace()
+        # pdb.set_trace()
         truth = truth_fields[field].values
-        # print("truth shape",truth_fields[field].shape)
-        print("truth is", truth)
+        print("truth shape",truth_fields[field].shape)
+        # print("truth is", truth)
         # pred = pred_fields[field][0].values
         pred = pred_fields[field].values
-        # print("pred shape",pred_fields[field].s)
-        print("pred", pred)
-
+        print("pred shape",pred_fields[field].shape)
+        #take the first ensemble only
+        pred = pred[0]
+        print("pred shape after taking the first ensemble",pred.shape)
+        # print("pred", pred)
         mu_ref, sigma_ref = get_mean_sigma(normalize(truth, field))
         mu, sigma = get_mean_sigma(normalize(pred, field))
         fid[field] = calculate_fid_from_inception_stats(mu, sigma, mu_ref, sigma_ref)
