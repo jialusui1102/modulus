@@ -157,6 +157,8 @@ cython_debug/
 # VIM
 *.swp
 *~
+*.png
+*.mp4
 
 # Additional stuff
 nsight-systems*
@@ -172,3 +174,4 @@ sbatch_logs/
 wandb/
 updated/
 output_metrics/plot_samples
+output_metrics/plot_samples_alicia
