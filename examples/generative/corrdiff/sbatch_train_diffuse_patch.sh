@@ -35,6 +35,7 @@ export NPROC_PER_NODE=8
 export TOTAL_GPU=$((${SLURM_JOB_NUM_NODES} * ${NPROC_PER_NODE}))
 export TOTALGPU=$(( ${NPROC_PER_NODE} * ${SLURM_NNODES} ))
 RUN_CMD="python -u train.py"
+
 # rsync -av /code/modulus_pb/modulus /usr/local/lib/python3.10/dist-packages/
 # run code
 echo "Running on hosts: $(echo $(scontrol show hostname))"

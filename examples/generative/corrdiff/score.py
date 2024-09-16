@@ -13,7 +13,8 @@ import environment
 import netCDF4 as nc
 
 
-SCORES_FILENAME = "hurricane2022.nc"
+GENERATE_FILENAME = "hurricane2022_v2.nc"
+SCORES_FILENAME = "hurricane2022_score.nc"
 inference_root = "/code/modulus/examples/generative/corrdiff/outputs/generation"
 score_root = "/code/modulus/examples/generative/corrdiff/outputs/generation_scores"
 
@@ -64,11 +65,12 @@ def main(run: str, step: int=typer.Option(), inferences: str=inference_root, sco
     """
     Example:
         ./score.py --step 103614 paper_diffusion --inference-type large_validation_2023
-        python3 score.py patched_diffusion --step 1156709 
+        python3 score.py patched_diffusion --step 1177517 
+        python /code/modulus/examples/generative/corrdiff/score.py patched_diffusion --step 1177517 --rank-hist
     """
     if not inference_type:
         # path_netcdf = os.path.join(inferences, run + ".nc")
-        path_netcdf = os.path.join(inferences, SCORES_FILENAME)
+        path_netcdf = os.path.join(inferences, GENERATE_FILENAME)
         inference_type = "default"
     else:
         pattern = os.path.join(inferences, inference_type, run, f"*{step}*.nc")
@@ -83,12 +85,19 @@ def main(run: str, step: int=typer.Option(), inferences: str=inference_root, sco
     # I added this to make a more
     # reasonable scoring.  I manually moved the files to
     # scores/v1/large_validation_2023_nEns32 -- NDB 5.7
-    call_python_script(["corrdiff/inference_old/compute_fid.py", path_netcdf, os.path.join(dirname, "fid"), "--n-ensemble", "32"])
-    call_python_script(["corrdiff/score_samples_old.py", path_netcdf, os.path.join(dirname, SCORES_FILENAME), "--n-ensemble", "32"])
-    call_python_script(["corrdiff/inference/power_spectra.py", path_netcdf, os.path.join(dirname, "spectra"), "--n-ensemble", "32"])
-    call_python_script(["corrdiff/case_studies.py", path_netcdf,  dirname])
+    # call_python_script(["corrdiff/inference_old/compute_fid.py", path_netcdf, os.path.join(dirname, "fid"), "--n-ensemble", "32"])
+    # call_python_script(["corrdiff/score_samples_old.py", path_netcdf, os.path.join(dirname, SCORES_FILENAME), "--n-ensemble", "32"])
+    # call_python_script(["corrdiff/inference_old/power_spectra.py", path_netcdf, os.path.join(dirname, "spectra"), "--n-ensemble", "32"])
+    # call_python_script(["corrdiff/case_studies.py", path_netcdf,  dirname])
+    # if rank_hist:
+    #     call_python_script(["corrdiff/inference_old/rank_histogram.py", path_netcdf, os.path.join(dirname, "dispersion"), "--n-ensemble", "8", "--n-timesteps", "20"])
+
+    # call_python_script(["/code/modulus/examples/generative/corrdiff/inference_old/compute_fid.py", path_netcdf, os.path.join(dirname, "fid"), "--n-ensemble", "32"])
+    # call_python_script(["/code/modulus/examples/generative/corrdiff/score_samples_old.py", path_netcdf, os.path.join(dirname, "SCORES_FILENAME"), "--n-ensemble", "32"])
+    # call_python_script(["/code/modulus/examples/generative/corrdiff/inference_old/power_spectra.py", path_netcdf, os.path.join(dirname, "spectra"), "--n-ensemble", "32"])
+    # call_python_script(["/code/modulus/examples/generative/corrdiff/case_studies.py", path_netcdf,  dirname])
     if rank_hist:
-        call_python_script(["corrdiff/inference_old/rank_histogram.py", path_netcdf, os.path.join(dirname, "dispersion"), "--n-ensemble", "8", "--n-timesteps", "20"])
+        call_python_script(["/code/modulus/examples/generative/corrdiff/inference_old/rank_histogram_new.py", os.path.join(dirname, "dispersion"), "--n-ensemble", "32", "--n-timesteps", "18"])
     
 
 if __name__ == "__main__":

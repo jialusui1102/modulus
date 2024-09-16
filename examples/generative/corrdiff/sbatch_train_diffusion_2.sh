@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH -A coreai_devtech_all
 #SBATCH -J coreai_climate_earth2-corrdiff_train.multi
-#SBATCH -t 03:55:59
+#SBATCH -t 02:55:59
 #SBATCH -p batch
-#SBATCH -N 8
+#SBATCH -N 1
 #SBATCH --dependency=singleton   # it means, next job will be automatically run
 #SBATCH -o ./updated/multi/%x_%j.out
 #SBATCH -e ./updated/multi/%x_%j.err
@@ -29,7 +29,7 @@ readonly _cont_image="/lustre/fsw/coreai_climate_earth2/dpruitt/images/modulus.2
 
 readonly _cont_name='corrdiff'
 #export BATCH_PER_GPU=2
-export NPROC_PER_NODE=8
+export NPROC_PER_NODE=1
 #export TOTAL_BATCH=$(($BATCH_PER_GPU * $SLURM_JOB_NUM_NODES * $NPROC_PER_NODE))
 export TOTAL_GPU=$(($SLURM_JOB_NUM_NODES * $NPROC_PER_NODE))
 RUN_CMD="torchrun \

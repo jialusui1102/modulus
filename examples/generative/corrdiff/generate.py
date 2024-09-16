@@ -370,7 +370,6 @@ def main(cfg: DictConfig) -> None:
                     )
                     image_tar = image_tar.to(device=device).to(torch.float32)
                     image_out = generate_fn()
-                    pdb.set_trace()
 
                     if dist.rank == 0:
                         batch_size = image_out.shape[0]

@@ -118,11 +118,13 @@ def main():
     """Plot single sample"""
     file = "/us_data/downscaling/hrrr/2022.zarr"
     # res_url_base = "../image_outdir_hrrr_reslossv2_9M_casestudy_2_0.nc"
-    res_url_base = "../outputs/generation/output_0.nc"
+    res_url_base = "/code/modulus/examples/generative/corrdiff/outputs/generation/hurricane2022_v2.nc"
+    
     
     # txt_msg = "reg_ckpt:/code/hrrr_reg/training-state-regression-000534.mdlus"
     # txt_msg = "reg_ckpt:/code/hrrr_reg/training-state-regression-000534.mdlus" + "\n" + "res_ckpt:/code/modulus_hrrr/examples/generative/corrdiff/output_diffusion/training-state-diffusion-008405.mdlus"
-    output_dir = os.path.splitext(__file__)[0]
+    output_dir = "/code/modulus/examples/generative/corrdiff/output_metrics/plot_samples_alicia"#os.path.splitext(__file__)[0]
+    print("dir is",output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
     time_format = "%Y-%m-%dT%H:%M:%S"
@@ -172,85 +174,85 @@ def main():
                 "10v": "v10m",
                 "2t": "t2m"}
 
-    for channel in ['2t', '10u', '10v', 'refc']:
-        # label row
-        inp_channel = key2inp.get(channel, None)
-        res_c = res[channel]
-        gt_c = gt[channel]
-        inp_c = inp[inp_channel] if inp_channel is not None else gt_c
-        vmin, vmax = get_clim([res_c, gt_c, inp_c])
-        for t_idx, t in enumerate(times):
-            fs = [gt_c.isel(time=t_idx).load(), res_c.isel(time=t_idx).load(), inp_c.isel(time=t_idx).load()]
+    # for channel in ['2t', '10u', '10v', 'refc']:
+    #     # label row
+    #     inp_channel = key2inp.get(channel, None)
+    #     res_c = res[channel]
+    #     gt_c = gt[channel]
+    #     inp_c = inp[inp_channel] if inp_channel is not None else gt_c
+    #     vmin, vmax = get_clim([res_c, gt_c, inp_c])
+    #     for t_idx, t in enumerate(times):
+    #         fs = [gt_c.isel(time=t_idx).load(), res_c.isel(time=t_idx).load(), inp_c.isel(time=t_idx).load()]
         
 
-            # projection = ccrs.LambertConformal(
-            #     central_longitude = -97.5,
-            #     central_latitude = 38.5,
-            #     standard_parallels = (38.5,38.5),
-            #     cutoff = 0)
+    #         # projection = ccrs.LambertConformal(
+    #         #     central_longitude = -97.5,
+    #         #     central_latitude = 38.5,
+    #         #     standard_parallels = (38.5,38.5),
+    #         #     cutoff = 0)
 
-            fig, axss = plt.subplots(
-                nrows=3,
-                ncols=1,
-                sharex=True,
-                sharey=True,
-                constrained_layout=True,
-                figsize=(14, 16),
-                subplot_kw=dict(projection=ccrs.PlateCarree())
-            )
-            for row, group in enumerate(fs):
-                axs = axss[row]
-                gl = axs.gridlines(
-                    crs=ccrs.PlateCarree(),
-                    color="black",
-                    alpha=0.0,
-                    draw_labels=True,
-                    linestyle="None",
-                )
-                axs.coastlines(linewidth=0.5, color="white")
-                axs.set_title(f"{group_label[row]}")
+    #         fig, axss = plt.subplots(
+    #             nrows=3,
+    #             ncols=1,
+    #             sharex=True,
+    #             sharey=True,
+    #             constrained_layout=True,
+    #             figsize=(14, 16),
+    #             subplot_kw=dict(projection=ccrs.PlateCarree())
+    #         )
+    #         for row, group in enumerate(fs):
+    #             axs = axss[row]
+    #             gl = axs.gridlines(
+    #                 crs=ccrs.PlateCarree(),
+    #                 color="black",
+    #                 alpha=0.0,
+    #                 draw_labels=True,
+    #                 linestyle="None",
+    #             )
+    #             axs.coastlines(linewidth=0.5, color="white")
+    #             axs.set_title(f"{group_label[row]}")
 
-                def plot_panel(ax, data, **kwargs):
-                    if channel == "refc":
-                        return ax.pcolormesh(
-                            lon, lat, data, cmap="magma", vmin=0, vmax=vmax, # transform=ccrs.PlateCarree()
-                        )
-                    if channel == "2t":
-                        return ax.pcolormesh(
-                            lon, lat, data, cmap="magma", vmin=vmin, vmax=vmax, # transform=ccrs.PlateCarree()
-                        )
-                    else:
-                        if vmin < 0 < vmax:
-                            bound = max(abs(vmin), abs(vmax))
-                            vmin1 = -bound
-                            vmax1 = bound
-                        else:
-                            vmin1 = vmin
-                            vmax1 = vmax
-                        return ax.pcolormesh(
-                            lon, lat, data, cmap="RdBu_r", vmin=vmin1, vmax=vmax1, #transform=ccrs.PlateCarree()
-                        )
+    #             def plot_panel(ax, data, **kwargs):
+    #                 if channel == "refc":
+    #                     return ax.pcolormesh(
+    #                         lon, lat, data, cmap="magma", vmin=0, vmax=vmax, # transform=ccrs.PlateCarree()
+    #                     )
+    #                 if channel == "2t":
+    #                     return ax.pcolormesh(
+    #                         lon, lat, data, cmap="magma", vmin=vmin, vmax=vmax, # transform=ccrs.PlateCarree()
+    #                     )
+    #                 else:
+    #                     if vmin < 0 < vmax:
+    #                         bound = max(abs(vmin), abs(vmax))
+    #                         vmin1 = -bound
+    #                         vmax1 = bound
+    #                     else:
+    #                         vmin1 = vmin
+    #                         vmax1 = vmax
+    #                     return ax.pcolormesh(
+    #                         lon, lat, data, cmap="RdBu_r", vmin=vmin1, vmax=vmax1, #transform=ccrs.PlateCarree()
+    #                     )
 
 
-                im = plot_panel(axs, group)
-                axs.set_xlabel("longitude [deg E]")
-                axs.set_ylabel("latitude [deg N]")
+    #             im = plot_panel(axs, group)
+    #             axs.set_xlabel("longitude [deg E]")
+    #             axs.set_ylabel("latitude [deg N]")
             
-            fig.suptitle(f'{kf[channel]} of CONUS at {t}', fontsize=16)
-            fig.subplots_adjust(top=0.88)
-            cb = plt.colorbar(im, ax=axss.ravel().tolist())
-            cb.set_label(kf[channel])
-            plt.savefig(f"{output_dir}/Patch_diff-{channel}-{t}.png")
-            plt.close()
+    #         fig.suptitle(f'{kf[channel]} of CONUS at {t}', fontsize=16)
+    #         fig.subplots_adjust(top=0.88)
+    #         cb = plt.colorbar(im, ax=axss.ravel().tolist())
+    #         cb.set_label(kf[channel])
+    #         plt.savefig(f"{output_dir}/Patch_diff-{channel}-{t}.png")
+    #         plt.close()
 
     
 
-    writer = imageio.get_writer('radar_reflectivity_movie_new.mp4', fps = 3)
-    dirFiles = os.listdir('./plot_samples/') #list of directory files
+    writer = imageio.get_writer('/code/modulus/examples/generative/corrdiff/output_metrics/radar_reflectivity_movie_alicia.mp4', fps = 3)
+    dirFiles = os.listdir(output_dir)#'./plot_samples_alicia/') #list of directory files
     # dirFiles.sort(key=lambda f: int(''.join(filter(str.isdigit, f))))
     dirFiles.sort()
     for im in dirFiles:
-        writer.append_data(imageio.imread('./plot_samples/'+im))
+        writer.append_data(imageio.imread(os.path.join(output_dir,im)))
     writer.close()
 
 if __name__ == "__main__":

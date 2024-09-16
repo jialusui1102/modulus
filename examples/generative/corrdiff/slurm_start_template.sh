@@ -14,7 +14,7 @@ readonly _cont_name='asuicorrdiff_interactive'
 srun -A coreai_climate_earth2\
         -N1\
         -p batch\
-        -t 01:00:00\
+        -t 02:00:00\
         -J coreai_climate_earth2-corrdiff:test\
         --ntasks-per-node=1\
     --container-image=${_cout_image}\

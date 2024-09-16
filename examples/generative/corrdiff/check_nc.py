@@ -37,7 +37,7 @@ def open_data(file, group=False):
 
     return ds
 # file = "/lustre/fsw/coreai_climate_earth2/nealp/scripts/dummy.nc"
-file = "outputs/generation/hurricane2022.nc"
+file = "outputs/generation/hurricane2022_v2.nc"
 # pred = open_data('outputs/generation/hurricane2022.nc',group='prediction')
 # truth = open_data('outputs/generation/hurricane2022.nc',group='truth')
 pred = open_data(file,group='prediction')

@@ -49,6 +49,7 @@ import multiprocessing
 import tqdm
 import argparse
 from functools import partial
+import json
 
 import xarray as xr
 
@@ -123,6 +124,11 @@ def main(path: str, output: str, n_ensemble: int == -1):
     # to netcdf with single threaded scheduler to avoid deadlocks
     with dask.config.set(scheduler="single-threaded"):
         metrics.to_netcdf(output, mode="w")
+        #save the score file to json as well
+        metrics_dict = metrics.to_dict()
+        json_file = output.replace(".nc",".json")
+        with open(json_file, 'w') as f:
+            json.dump(metrics_dict, f, indent=4)
 
 
 if __name__ == "__main__":

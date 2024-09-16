@@ -31,7 +31,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-num_ensembles: 4 #32
+# num_ensembles = seed_batch_size * world_size
+num_ensembles: 32
   # Number of ensembles to generate per input
 seed_batch_size: 4
   # Size of the batched inference
