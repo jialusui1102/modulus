@@ -68,6 +68,7 @@ def main(file, output, plot=True, save_data=True, n_ensemble: int = -1, n_timest
     print("n_ensemble", n_ensemble, "n_timesteps", n_timesteps)
     samples = {}
     prediction = open_data(file, group="prediction")
+    
     if n_ensemble > 0:
         prediction = prediction.isel(ensemble=slice(0, n_ensemble))
     truth = open_data(file, group="truth")
@@ -99,7 +100,7 @@ def main(file, output, plot=True, save_data=True, n_ensemble: int = -1, n_timest
             i += 1
             plt.bar(hist['rank'], hist[field])
             plt.title(field)
-        savefig("rank_hist")
+        savefig("rank_hist_old")
 
 
 if __name__ == "__main__":

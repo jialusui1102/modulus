@@ -159,6 +159,7 @@ cython_debug/
 *~
 *.png
 *.mp4
+*.pdf
 
 # Additional stuff
 nsight-systems*

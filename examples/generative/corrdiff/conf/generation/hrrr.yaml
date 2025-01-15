@@ -182,8 +182,10 @@ perf:
     # To support multiple workers a threadsafe version of the netCDF library must be used
 
 
+
 io:
-  res_ckpt_filename: /code/modulus/examples/generative/corrdiff/outputs/patched_diffusion/checkpoints_patched_diffusion/EDMPrecondSR.0.6000128.mdlus 
+  # res_ckpt_filename: /code/modulus/examples/generative/corrdiff/outputs/patched_diffusion/checkpoints_patched_diffusion/EDMPrecondSR.0.6000128.mdlus 
+  res_ckpt_filename: /code/modulus/examples/generative/corrdiff/outputs/patched_diffusion/checkpoints_patched_diffusion/EDMPrecondSR.0.10000128.mdlus
     # Checkpoint filename for the diffusion model  
   reg_ckpt_filename: /lustre/fsw/coreai_climate_earth2/nealp/hrrr_reg_reslossv2/training-state-regression-000513.mdlus
     # Checkpoint filename for the mean predictor model

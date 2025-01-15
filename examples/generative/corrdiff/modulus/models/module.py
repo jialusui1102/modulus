@@ -30,7 +30,7 @@ import modulus
 from modulus.models.meta import ModelMetaData
 from modulus.registry import ModelRegistry
 from modulus.utils.filesystem import _download_cached, _get_fs
-
+import pdb
 
 class Module(torch.nn.Module):
     """The base class for all network models in Modulus.
@@ -157,7 +157,7 @@ class Module(torch.nn.Module):
           )
         )
         """
-
+        # pdb.set_trace()
         _cls_name = arg_dict["__name__"]
         registry = ModelRegistry()
         if cls.__name__ == arg_dict["__name__"]:  # If cls is the class
@@ -312,7 +312,7 @@ class Module(torch.nn.Module):
             # Load the model weights
             device = map_location if map_location is not None else self.device
             model_dict = torch.load(
-                local_path.joinpath("model.pt"), map_location=device
+                local_path.joinpath("model.pt"), map_location=device,weights_only=True
             )
             self.load_state_dict(model_dict, strict=strict)
 
@@ -358,9 +358,18 @@ class Module(torch.nn.Module):
 
             # Load the model weights
             model_dict = torch.load(
-                local_path.joinpath("model.pt"), map_location=model.device
+                local_path.joinpath("model.pt"), map_location=model.device,weights_only=True
             )
-            model.load_state_dict(model_dict)
+            
+            #for process apex groupnorm
+            filtered_state_dict = {
+                k: v for k, v in model_dict.items()
+                if ".gn." not in k  # or whatever naming scheme your GN uses
+            }
+
+            # Use strict=False to avoid errors about missing gn parameters
+            model.load_state_dict(filtered_state_dict, strict=False)
+            # model.load_state_dict(model_dict)
 
         return model
 

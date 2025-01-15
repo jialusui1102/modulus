@@ -337,7 +337,9 @@ def load_checkpoint(
             if isinstance(model, modulus.models.Module):
                 model.load(file_name)
             else:
-                model.load_state_dict(torch.load(file_name, map_location=device))
+                # model.load_state_dict(torch.load(file_name, map_location=device))
+                model.load_state_dict(torch.load(file_name, map_location=device, weights_only=True))
+                
 
             checkpoint_logging.success(
                 f"Loaded model state dictionary {file_name} to device {device}"
@@ -351,7 +353,9 @@ def load_checkpoint(
         )
         return 0
 
-    checkpoint_dict = torch.load(checkpoint_filename, map_location=device)
+    # checkpoint_dict = torch.load(checkpoint_filename, map_location=device)
+    checkpoint_dict = torch.load(checkpoint_filename, map_location=device,weights_only=True)
+    
     checkpoint_logging.success(
         f"Loaded checkpoint file {checkpoint_filename} to device {device}"
     )

@@ -39,9 +39,9 @@ hp:
     # ---------------- #
     training_duration: 200000000
     # Training duration
-    total_batch_size: 256
+    total_batch_size: 16
     # Total batch size
-    batch_size_per_gpu: 2
+    batch_size_per_gpu: 1
     # Limit batch size per GPU
     cbase: null  # TODO check
     # Channel multiplier
@@ -101,9 +101,10 @@ perf:
 
 # I/O
 io:
-    # regression_checkpoint_path: checkpoints/regression.mdlus
+    # regression_checkpoint_path: /lustre/fsw/coreai_climate_earth2/asui/modulus/examples/generative/corrdiff/outputs/regression/checkpoints_regression/checkpoint.0.600064.pt
+    regression_checkpoint_path: /lustre/fsw/coreai_climate_earth2/asui/modulus/examples/generative/corrdiff/outputs/regression/checkpoints_regression/UNet.0.700032.mdlus
     # regression_checkpoint_path: /lustre/fsw/coreai_climate_earth2/eos-corrdiff-dir/training_output/regression_modulus/regression/training-state-regression-updated-002067.mdlus
-    regression_checkpoint_path: /lustre/fsw/coreai_climate_earth2/nealp/hrrr_reg_reslossv2/training-state-regression-000513.mdlus
+    # regression_checkpoint_path: /lustre/fsw/coreai_climate_earth2/nealp/hrrr_reg_reslossv2/training-state-regression-000513.mdlus
     # regression_checkpoint_path: /lustre/fsw/coreai_climate_earth2/nealp/hrrr_reg/training-state-regression-000847.mdlus
     # regression_checkpoint_path: /lustre/fsw/coreai_climate_earth2/nealp/hrrr_reg_reslossv2_all_channel/training-state-regression-000514.mdlus
 

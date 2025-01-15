@@ -74,7 +74,7 @@ def main(output, plot=True, save_data=True, n_ensemble: int = -1, n_timesteps: i
 
     print("n_ensemble", n_ensemble, "n_timesteps", n_timesteps)
     n_members = 32
-    plt.figure(figsize=(40,30))
+    plt.figure(figsize=(15,10))
     tic = time.time()
     # for lead in range(9):
     # predictions = []
@@ -93,24 +93,21 @@ def main(output, plot=True, save_data=True, n_ensemble: int = -1, n_timesteps: i
     if n_ensemble > 0:
         predictions = predictions.isel(ensemble=slice(0, n_ensemble))
     truths = open_data(file, group="truth")
-    # print("pred is",prediction['10v'].values)
-    
     truths = truths.isel(time=slice(0, n_timesteps))
     predictions = predictions.isel(time=slice(0, n_timesteps))
-    # print(prediction['10u'])
-    hist = torch.zeros((8, n_members+1))
+    hist = torch.zeros((4, n_members+1))
+    
     with torch.no_grad():
         for idx, var in enumerate(vars):           
-            print("var is",var)
             # pdb.set_trace()
             # print("prd",prediction[var].values)
             prediction = torch.from_numpy(predictions[var].values).cuda()
             truth = torch.from_numpy(truths[var].values).cuda()
-            prediction = prediction[..., ::2, ::2]
-            if var in vars[4:]:
-                prediction[prediction<0] = 0
-                prediction[prediction>1] = 1
-            truth = truth[..., ::2, ::2]
+            # prediction = prediction[..., ::2, ::2]
+            # if var in vars[4:]:
+            #     prediction[prediction<0] = 0
+            #     prediction[prediction>1] = 1
+            # truth = truth[..., ::2, ::2]
             sorted_predictions, _ = torch.sort(prediction, dim=0)
             for member in range(n_members+1):
                 if member==0:
@@ -126,16 +123,19 @@ def main(output, plot=True, save_data=True, n_ensemble: int = -1, n_timesteps: i
                 print(idx, member, torch.sum((truth>=a) & (truth<b))/truth.numel())
 
         hist = hist.cpu().detach().numpy()
-        # pdb.set_trace()
 
-        # print(lead, time.time()-tic,flush=True)
-
+        # path = os.path.join(output, "rank_hist.json")
+        # with open(path, "w") as f:
+        #     json.dump(hist.to_dict(), f)
+            
         for i in range(4):
             plt.subplot(2,2,i+1)
             plt.bar(np.arange(n_members+1),hist[i])
+            plt.title(vars[i])  
+            
         
         plt.tight_layout()
-        savefig("rank_hist")
+        savefig("rank_hist_new")
 
         # if plot:
         #     i = 1

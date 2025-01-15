@@ -38,7 +38,7 @@ from modulus.models.diffusion import (
 )
 from modulus.models.meta import ModelMetaData
 from modulus.models.module import Module
-
+import pdb
 
 @dataclass
 class MetaData(ModelMetaData):
@@ -351,7 +351,7 @@ class SongUNet(Module):
         skips = []
         aux = x
         for name, block in self.enc.items():
-            with nvtx.annotate(f"SongUNet encoder: {name}", color="blue"):
+            with nvtx.annotate(f"SongUNet encoder: {name}, input shape {x.shape}", color="blue"):
                 if "aux_down" in name:
                     aux = block(aux)
                 elif "aux_skip" in name:
@@ -373,7 +373,7 @@ class SongUNet(Module):
         aux = None
         tmp = None
         for name, block in self.dec.items():
-            with nvtx.annotate(f"SongUNet decoder: {name}", color="blue"):
+            with nvtx.annotate(f"SongUNet decoder: {name}, input shape {x.shape}", color="blue"):
                 if "aux_up" in name:
                     aux = block(aux)
                 elif "aux_norm" in name:
@@ -525,17 +525,18 @@ class SongUNetPosEmbd(SongUNet):
         if self.pos_embd is not None:
             selected_pos_embd = self.positional_embedding_indexing(x, global_index)
             x = torch.cat((x, selected_pos_embd), dim=1)
-
+        # pdb.set_trace()
         return super().forward(x, noise_labels, class_labels, augment_labels)
 
     def positional_embedding_indexing(self, x, global_index):
         if global_index is None:
             selected_pos_embd = (
-                self.pos_embd.to(x.dtype)
-                .to(x.device)[None]
+                self.pos_embd.to(x.device)
+                .to(x.dtype)[None]
                 .expand((x.shape[0], -1, -1, -1))
             )
         else:
+            # global_index = global_index.to(x.device)
             B = global_index.shape[0]
             X = global_index.shape[2]
             Y = global_index.shape[3]

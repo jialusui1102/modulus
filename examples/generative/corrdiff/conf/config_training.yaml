@@ -17,7 +17,7 @@
 hydra:
   job:
     chdir: true
-    name: patched_diffusion
+    name: patched_diffusion #patched_diffusion,regression
   run:
     dir: ./outputs/${hydra:job.name}
 

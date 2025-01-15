@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import pdb
+
 import hydra
 from omegaconf import OmegaConf, DictConfig
 import torch
@@ -31,7 +31,7 @@ from torch.distributed import gather
 
 
 from hydra.utils import to_absolute_path
-from modulus.utils.generative import deterministic_sampler, stochastic_sampler, edm_sampler
+from modulus.utils.generative import deterministic_sampler, stochastic_sampler
 from modulus.utils.corrdiff import (
     NetCDFWriter,
     get_time_from_range,
@@ -45,7 +45,6 @@ from helpers.generate_helpers import (
     save_images,
 )
 from helpers.train_helpers import set_patch_shape
-
 torch._dynamo.config.cache_size_limit = 64  # Set to a higher value
 
 @hydra.main(version_base="1.2", config_path="conf", config_name="config_generate")
@@ -65,22 +64,18 @@ def main(cfg: DictConfig) -> None:
     logger.file_logging("generate.log")
 
     # Handle the batch size
-    #num_ensembles = world_size * seed_batch_size
     seeds = list(np.arange(cfg.generation.num_ensembles))
     num_batches = (
         (len(seeds) - 1) // (cfg.generation.seed_batch_size * dist.world_size) + 1
     ) * dist.world_size
     all_batches = torch.as_tensor(seeds).tensor_split(num_batches)
     rank_batches = all_batches[dist.rank :: dist.world_size]
-    print(f"total number of gpu is {dist.world_size}")
-    print(f"on gpu {dist.rank}, rank batches is {rank_batches}")
 
     # Synchronize
     if dist.world_size > 1:
         torch.distributed.barrier()
 
     # Parse the inference input times
-    # if cfg.generation.times_range and times:
     if cfg.generation.times_range and cfg.generation.times:
         raise ValueError("Either times_range or times must be provided, but not both")
     if cfg.generation.times_range:
@@ -90,19 +85,13 @@ def main(cfg: DictConfig) -> None:
 
     # Create dataset object
     dataset_cfg = OmegaConf.to_container(cfg.dataset)
+    if "has_lead_time" in cfg.generation:
+        has_lead_time = cfg.generation["has_lead_time"]
+    else:
+        has_lead_time = False
     dataset, sampler = get_dataset_and_sampler(dataset_cfg=dataset_cfg, times=times)
     img_shape = dataset.image_shape()
     img_out_channels = len(dataset.output_channels())
-
-    # # Parse the patch shape
-    # if hasattr(cfg, "training.hp.patch_shape_x"):  # TODO better config handling
-    #     patch_shape_x = cfg.training.hp.patch_shape_x
-    # else:
-    #     patch_shape_x = None
-    # if hasattr(cfg, "training.hp.patch_shape_y"):
-    #     patch_shape_y = cfg.training.hp.patch_shape_y
-    # else:
-    #     patch_shape_y = None
 
     # Parse the patch shape
     if hasattr(cfg.generation, "patch_shape_x"):  # TODO better config handling
@@ -119,8 +108,7 @@ def main(cfg: DictConfig) -> None:
         logger0.info("Patch-based training enabled")
     else:
         logger0.info("Patch-based training disabled")
-    print("image shape is",img_shape)
-    print("patch shape is",patch_shape)
+
     # Parse the inference mode
     if cfg.generation.inference_mode == "regression":
         load_net_reg, load_net_res = True, False
@@ -159,12 +147,10 @@ def main(cfg: DictConfig) -> None:
         # Only compile residual network
         # Overhead of compiling regression network outweights any benefits
         if net_res:
-            # net_res = torch.compile(net_res, mode="reduce-overhead")
-            net_res = torch.compile(net_res)
-        if net_reg:
-            # net_res = torch.compile(net_res, mode="reduce-overhead")
-            net_reg = torch.compile(net_reg)
+            net_res = torch.compile(net_res, mode="reduce-overhead")
             
+        if net_reg:
+            net_reg = torch.compile(net_reg, mode="reduce-overhead")
 
     # Partially instantiate the sampler based on the configs
     if cfg.sampler.type == "deterministic":
@@ -172,57 +158,16 @@ def main(cfg: DictConfig) -> None:
             raise NotImplementedError(
                 "High-res mean conditioning is not yet implemented for the deterministic sampler"
             )
-        """
-        
-        ## Deterministic sampler options
-        sigma_min: null
-        # Lowest noise level
-        sigma_max: null
-        # Highest noise level
-        rho: 7
-        # Time step exponent
-        # solver: euler
-        #   # ODE solver [euler, heun]
-        discretization: "edm"
-        # Time step discretization [vp, ve, iddpm, edm]
-        schedule: "linear"
-        # noise schedule sigma(t) [vp, ve, linear]
-        scaling: null
-        # Signal scaling s(t) [vp, none]
-        S_churn: 0.5
-        # Stochasticity strength
-        S_min: 0
-        # Stochasticity min noise level
-        S_max: .inf 
-        # Stochasticity max noise level
-        S_noise: 1
-        # Stochasticity noise inflation
-        """
         sampler_fn = partial(
             deterministic_sampler,
             num_steps=cfg.sampler.num_steps,
             # num_ensembles=cfg.generation.num_ensembles,
             solver=cfg.sampler.solver,
-
-            #add more customized sampler options:
-            sigma_min = cfg.sampler.sigma_min,
-            sigma_max = cfg.sampler.sigma_max,
-            rho = cfg.sampler.rho,
-            discretization = cfg.sampler.discretization,
-            schedule = cfg.sampler.schedule,
-            scaling = cfg.sampler.scaling,
-            S_churn = cfg.sampler.S_churn,
-            S_min = cfg.sampler.S_min,
-            S_max = cfg.sampler.S_max,
-            S_noise = cfg.sampler.S_noise
-
         )
     elif cfg.sampler.type == "stochastic":
         sampler_fn = partial(
-            # stochastic_sampler,
-            edm_sampler,
-            # img_shape=img_shape[1],
-            img_shape = (img_shape[1],img_shape[0]),
+            stochastic_sampler,
+            img_shape=img_shape[1],
             patch_shape=patch_shape[1],
             boundary_pix=cfg.sampler.boundary_pix,
             overlap_pix=cfg.sampler.overlap_pix,
@@ -246,7 +191,6 @@ def main(cfg: DictConfig) -> None:
                 )
                 torch.cuda.nvtx.range_pop()
             image_lr_patch = image_lr_patch.to(memory_format=torch.channels_last)
-            # pdb.set_trace()
 
             if net_reg:
                 with nvtx.annotate("regression_model", color="yellow"):
@@ -256,11 +200,10 @@ def main(cfg: DictConfig) -> None:
                         latents_shape=(
                             cfg.generation.seed_batch_size,
                             img_out_channels,
-                            # img_shape[1],
-                            # img_shape[0],
                             img_shape[0],
                             img_shape[1],
                         ),
+                        # lead_time_label=lead_time_label,
                     )
             if net_res:
                 if cfg.generation.hr_mean_conditioning:
@@ -281,6 +224,7 @@ def main(cfg: DictConfig) -> None:
                         rank=dist.rank,
                         device=device,
                         hr_mean=mean_hr,
+                        # lead_time_label=lead_time_label,
                     )
             if cfg.generation.inference_mode == "regression":
                 image_out = image_reg
@@ -288,7 +232,6 @@ def main(cfg: DictConfig) -> None:
                 image_out = image_res
             else:
                 image_out = image_reg + image_res
-            
 
             if cfg.generation.sample_res != "full":
                 image_out = rearrange(
@@ -297,7 +240,6 @@ def main(cfg: DictConfig) -> None:
                     h1=img_shape_y // patch_shape[0],
                     w1=img_shape_x // patch_shape[1],
                 )
-
             # Gather tensors on rank 0
             if dist.world_size > 1:
                 if dist.rank == 0:
@@ -325,44 +267,44 @@ def main(cfg: DictConfig) -> None:
                 return image_out
 
     # generate images
-    logger0.info("Generating images...")
+    output_path = getattr(cfg.generation.io, "output_filename", "corrdiff_output.nc")
+    logger0.info(f"Generating images, saving results to {output_path}...")
     batch_size = 1
-    warmup_steps = min(len(times), 2)
-    cur_nimg = 0
+    warmup_steps = min(len(times) - 1, 2)
     # Generates model predictions from the input data using the specified
     # `generate_fn`, and save the predictions to the provided NetCDF file. It iterates
     # through the dataset using a data loader, computes predictions, and saves them along
     # with associated metadata.
-    with nc.Dataset(f"output_{dist.rank}.nc", "w") as f:
+    if dist.rank == 0:
+        f = nc.Dataset(output_path, "w")
         # add attributes
         f.cfg = str(cfg)
-        with torch.cuda.profiler.profile():
-            with torch.autograd.profiler.emit_nvtx():
 
+    with torch.cuda.profiler.profile():
+        with torch.autograd.profiler.emit_nvtx():
 
-                data_loader = torch.utils.data.DataLoader(
-                    dataset=dataset, sampler=sampler, batch_size=1, pin_memory=True
-                )
-                time_index = -1
-                
-                if time_index == 4 :
-                        logger0.info(f"Starting Profiler")
-                        torch.cuda.profiler.start()
+            data_loader = torch.utils.data.DataLoader(
+                dataset=dataset, sampler=sampler, batch_size=1, pin_memory=True
+            )
+            time_index = -1
+            
+            if time_index == 4 :
+                logger0.info(f"Starting Profiler")
+                torch.cuda.profiler.start()
 
-                if time_index == 8 :
-                    logger0.info(f"Stoping Profiler")
-                    torch.cuda.profiler.stop()
+            if time_index == 16 :
+                logger0.info(f"Stoping Profiler")
+                torch.cuda.profiler.stop()
+            if dist.rank == 0:
                 writer = NetCDFWriter(
                     f,
                     lat=dataset.latitude(),
                     lon=dataset.longitude(),
                     input_channels=dataset.input_channels(),
                     output_channels=dataset.output_channels(),
+                    # has_lead_time=has_lead_time,
                 )
-                warmup_steps = 2
-
-                start = torch.cuda.Event(enable_timing=True)
-                end = torch.cuda.Event(enable_timing=True)
+                
 
                 # Initialize threadpool for writers
                 writer_executor = ThreadPoolExecutor(
@@ -370,62 +312,69 @@ def main(cfg: DictConfig) -> None:
                 )
                 writer_threads = []
 
-                times = dataset.time()
-                for image_tar, image_lr, index in iter(data_loader):
-                    # pdb.set_trace()
-                    time_index += 1
-                    if dist.rank == 0:
-                        logger0.info(f"starting index: {time_index}")
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
 
-                    if time_index == warmup_steps:
-                        start.record()
-
-                    # continue
-                    image_lr = (
-                        image_lr.to(device=device)
-                        .to(torch.float32)
-                        .to(memory_format=torch.channels_last)
-                    )
-                    image_tar = image_tar.to(device=device).to(torch.float32)
-                    image_out = generate_fn()
-
-                    if dist.rank == 0:
-                        batch_size = image_out.shape[0]
-                        # write out data in a seperate thread so we don't hold up inferencing
-                        writer_threads.append(
-                            writer_executor.submit(
-                                save_images,
-                                writer,
-                                dataset,
-                                list(times),
-                                image_out.cpu(),
-                                image_tar.cpu(),
-                                image_lr.cpu(),
-                                time_index,
-                                index[0],
-                            )
-                        )
-                end.record()
-                end.synchronize()
-                elapsed_time = start.elapsed_time(end) / 1000.0  # Convert ms to s
-                timed_steps = time_index + 1 - warmup_steps
+            times = dataset.time()
+            for image_tar, image_lr, index in iter(data_loader):
+                time_index += 1
                 if dist.rank == 0:
-                    average_time_per_batch_element = (
-                        elapsed_time / timed_steps / batch_size
-                    )
-                    logger.info(
-                        f"Total time to run {timed_steps} and {batch_size} ensembles = {elapsed_time} s"
-                    )
-                    logger.info(
-                        f"Average time per batch element = {average_time_per_batch_element} s"
-                    )
+                    logger0.info(f"starting index: {time_index}")
 
-                # make sure all the workers are done writing
+                if time_index == warmup_steps:
+                    start.record()
+
+                # continue
+                # if lead_time_label:
+                #     lead_time_label = lead_time_label[0].to(dist.device).contiguous()
+                # else:
+                #     lead_time_label = None
+                image_lr = (
+                    image_lr.to(device=device)
+                    .to(torch.float32)
+                    .to(memory_format=torch.channels_last)
+                )
+                image_tar = image_tar.to(device=device).to(torch.float32)
+                image_out = generate_fn()
+                if dist.rank == 0:
+                    batch_size = image_out.shape[0]
+                    # write out data in a seperate thread so we don't hold up inferencing
+                    writer_threads.append(
+                        writer_executor.submit(
+                            save_images,
+                            writer,
+                            dataset,
+                            list(times),
+                            image_out.cpu(),
+                            image_tar.cpu(),
+                            image_lr.cpu(),
+                            time_index,
+                            index[0],
+                            # has_lead_time,
+                        )
+                    )
+            end.record()
+            end.synchronize()
+            elapsed_time = start.elapsed_time(end) / 1000.0  # Convert ms to s
+            timed_steps = time_index + 1 - warmup_steps
+            if dist.rank == 0:
+                average_time_per_batch_element = elapsed_time / timed_steps / batch_size
+                logger.info(
+                    f"Total time to run {timed_steps} steps and {batch_size} members = {elapsed_time} s"
+                )
+                logger.info(
+                    f"Average time per batch element = {average_time_per_batch_element} s"
+                )
+
+            # make sure all the workers are done writing
+            if dist.rank == 0:
                 for thread in list(writer_threads):
                     thread.result()
                     writer_threads.remove(thread)
                 writer_executor.shutdown()
 
+    if dist.rank == 0:
+        f.close()
     logger0.info("Generation Completed.")
 
 

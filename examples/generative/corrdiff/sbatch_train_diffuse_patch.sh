@@ -5,8 +5,8 @@
 #SBATCH -p batch
 #SBATCH -N 8
 #SBATCH --dependency=singleton
-#SBATCH -o ./sbatch_logs/generate/%x_%j.out
-#SBATCH -e ./sbatch_logs/generate/%x_%j.err
+#SBATCH -o ./sbatch_logs/train/%x_%j.out
+#SBATCH -e ./sbatch_logs/train/%x_%j.err
 #SBATCH --exclusive
 
 # be sure we define everything
@@ -58,3 +58,4 @@ srun --container-name="${_cont_name}" \
      pip install treelib
      cd /code/modulus/examples/generative/corrdiff
      ${RUN_CMD}"
+     

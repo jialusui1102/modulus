@@ -27,6 +27,9 @@ from einops import rearrange
 from torch.nn.functional import silu
 
 from modulus.models.diffusion import weight_init
+import pdb
+import nvtx
+from apex.contrib.group_norm import GroupNorm as ApexGroupNorm
 
 
 class Linear(torch.nn.Module):
@@ -86,7 +89,7 @@ class Linear(torch.nn.Module):
             x = x.add_(self.bias.to(x.dtype))
         return x
 
-
+# @torch.compile
 class Conv2d(torch.nn.Module):
     """
     A custom 2D convolutional layer implementation with support for up-sampling,
@@ -226,7 +229,8 @@ class Conv2d(torch.nn.Module):
             x = x.add_(b.reshape(1, -1, 1, 1))
         return x
 
-
+# @torch.compile()
+# @torch._dynamo.disable()
 class GroupNorm(torch.nn.Module):
     """
     A custom Group Normalization layer implementation.
@@ -268,37 +272,54 @@ class GroupNorm(torch.nn.Module):
         self.eps = eps
         self.weight = torch.nn.Parameter(torch.ones(num_channels))
         self.bias = torch.nn.Parameter(torch.zeros(num_channels))
+        
+        self.gn = ApexGroupNorm(
+            num_groups=self.num_groups,
+            num_channels=num_channels,
+            eps=self.eps,
+            affine=True
+        )
+        
+        
 
     def forward(self, x):
-        if self.training:
+        # if self.training:
             # Use default torch implementation of GroupNorm for training
             # This does not support channels last memory format
-            x = torch.nn.functional.group_norm(
-                x,
-                num_groups=self.num_groups,
-                weight=self.weight.to(x.dtype),
-                bias=self.bias.to(x.dtype),
-                eps=self.eps,
-            )
-        else:
-            # Use custom GroupNorm implementation that supports channels last
-            # memory layout for inference
-            dtype = x.dtype
-            x = x.float()
-            x = rearrange(x, "b (g c) h w -> b g c h w", g=self.num_groups)
+        # x = torch.nn.functional.group_norm(
+        #     x,
+        #     num_groups=self.num_groups,
+        #     weight=self.weight.to(x.dtype),
+        #     bias=self.bias.to(x.dtype),
+        #     eps=self.eps,
+        # )
+        # else:
+        # Use custom GroupNorm implementation that supports channels last
+        # memory layout for inference
+        # dtype = x.dtype
+        # x = x.float()
+        # x = rearrange(x, "b (g c) h w -> b g c h w", g=self.num_groups)
 
-            mean = x.mean(dim=[2, 3, 4], keepdim=True)
-            var = x.var(dim=[2, 3, 4], keepdim=True)
+        # mean = x.mean(dim=[2, 3, 4], keepdim=True)
+        # var = x.var(dim=[2, 3, 4], keepdim=True)
 
-            x = (x - mean) * (var + self.eps).rsqrt()
-            x = rearrange(x, "b g c h w -> b (g c) h w")
+        # x = (x - mean) * (var + self.eps).rsqrt()
+        # x = rearrange(x, "b g c h w -> b (g c) h w")
 
-            weight = rearrange(self.weight, "c -> 1 c 1 1")
-            bias = rearrange(self.bias, "c -> 1 c 1 1")
-            x = x * weight + bias
+        # weight = rearrange(self.weight, "c -> 1 c 1 1")
+        # bias = rearrange(self.bias, "c -> 1 c 1 1")
+        # x = x * weight + bias
 
-            x = x.type(dtype)
+        # x = x.type(dtype)
+        
+        
+        # nvidia apex groupnorm (support channelslast)
+        #use nvidia apex groupnorm
+        torch.cuda.nvtx.range_push(f"GroupNorm, input shape {x.shape}, numgroups {self.num_groups}")
+        x = self.gn(x)
+        torch.cuda.nvtx.range_pop()
         return x
+
 
 
 class AttentionOp(torch.autograd.Function):
@@ -339,7 +360,7 @@ class AttentionOp(torch.autograd.Function):
         ) / np.sqrt(k.shape[1])
         return dq, dk
 
-
+@torch.compile
 class UNetBlock(torch.nn.Module):
     """
     Unified U-Net block with optional up/downsampling and self-attention. Represents

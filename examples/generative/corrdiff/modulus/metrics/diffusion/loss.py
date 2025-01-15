@@ -508,7 +508,7 @@ class ResLoss:
         grid = torch.stack(torch.meshgrid(Ny, Nx, indexing="ij"), dim=0)[
             None,
         ].expand(b, -1, -1, -1)
-
+        # pdb.set_trace()
         # form residual
         y_mean = self.unet(
             torch.zeros_like(y, device=img_clean.device),
@@ -599,6 +599,7 @@ class ResLoss:
             y = y_new
             y_lr = y_lr_new
         latent = y + torch.randn_like(y) * sigma
+        # pdb.set_trace()
         D_yn = net(
             latent,
             y_lr,

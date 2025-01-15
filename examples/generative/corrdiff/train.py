@@ -51,9 +51,9 @@ def main(cfg: DictConfig) -> None:
 #    Initialize a new WandB run
     if dist.rank == 0:
         wandb.login(key="56d6b1c55cf68cebc9129d638c9dba7987a4af51")
-        wandb.init( project="patched_corrdiff",
+        wandb.init( project="corrdiff_regression",
                     resume="allow",             # Options: 'allow', 'must', 'never'
-                    id="f09dy01p"            # The run ID of the process you want to resume)
+                    id="wrujmaml"            # The run ID of the process you want to resume)
                 )
 
     # Initialize loggers
@@ -166,6 +166,7 @@ def main(cfg: DictConfig) -> None:
             **model_args,
         )
     model.train().requires_grad_(True).to(dist.device)
+    
 
     # Enable distributed data parallel if applicable
     if dist.world_size > 1:
