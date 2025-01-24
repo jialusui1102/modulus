@@ -41,7 +41,7 @@ hp:
     # Training duration
     total_batch_size: 16
     # Total batch size
-    batch_size_per_gpu: 1
+    batch_size_per_gpu: 2
     # Limit batch size per GPU
     cbase: null  # TODO check
     # Channel multiplier
@@ -98,6 +98,7 @@ perf:
     # DataLoader worker processes
     songunet_checkpoint_level: 0 # 0 means no checkpointing
     # Gradient checkpointing level, value is number of layers to checkpoint
+    use_torch_compile: true
 
 # I/O
 io:

@@ -124,7 +124,7 @@ def main(cfg: DictConfig) -> None:
         res_ckpt_filename = cfg.generation.io.res_ckpt_filename
         logger0.info(f'Loading residual network from "{res_ckpt_filename}"...')
         net_res = Module.from_checkpoint(to_absolute_path(res_ckpt_filename))
-        net_res = net_res.eval().to(device).to(memory_format=torch.channels_last)
+        net_res = net_res.eval().to(device)#.to(memory_format=torch.channels_last)
         if cfg.generation.perf.force_fp16:
             net_res.use_fp16 = True
     else:
@@ -135,7 +135,7 @@ def main(cfg: DictConfig) -> None:
         reg_ckpt_filename = cfg.generation.io.reg_ckpt_filename
         logger0.info(f'Loading network from "{reg_ckpt_filename}"...')
         net_reg = Module.from_checkpoint(to_absolute_path(reg_ckpt_filename))
-        net_reg = net_reg.eval().to(device).to(memory_format=torch.channels_last)
+        net_reg = net_reg.eval().to(device)#.to(memory_format=torch.channels_last)
         if cfg.generation.perf.force_fp16:
             net_reg.use_fp16 = True
     else:
@@ -190,7 +190,7 @@ def main(cfg: DictConfig) -> None:
                     w1=img_shape_x // patch_shape[1],
                 )
                 torch.cuda.nvtx.range_pop()
-            image_lr_patch = image_lr_patch.to(memory_format=torch.channels_last)
+            # image_lr_patch = image_lr_patch.to(memory_format=torch.channels_last)
 
             if net_reg:
                 with nvtx.annotate("regression_model", color="yellow"):
@@ -220,7 +220,7 @@ def main(cfg: DictConfig) -> None:
                         rank_batches=rank_batches,
                         img_lr=image_lr_patch.expand(
                             cfg.generation.seed_batch_size, -1, -1, -1
-                        ).to(memory_format=torch.channels_last),
+                        ), #.to(memory_format=torch.channels_last),
                         rank=dist.rank,
                         device=device,
                         hr_mean=mean_hr,
@@ -292,7 +292,7 @@ def main(cfg: DictConfig) -> None:
                 logger0.info(f"Starting Profiler")
                 torch.cuda.profiler.start()
 
-            if time_index == 16 :
+            if time_index == 8 :
                 logger0.info(f"Stoping Profiler")
                 torch.cuda.profiler.stop()
             if dist.rank == 0:
@@ -332,7 +332,7 @@ def main(cfg: DictConfig) -> None:
                 image_lr = (
                     image_lr.to(device=device)
                     .to(torch.float32)
-                    .to(memory_format=torch.channels_last)
+                    # .to(memory_format=torch.channels_last)
                 )
                 image_tar = image_tar.to(device=device).to(torch.float32)
                 image_out = generate_fn()

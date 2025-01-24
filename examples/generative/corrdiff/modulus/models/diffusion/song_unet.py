@@ -202,6 +202,7 @@ class SongUNet(Module):
         else:
             self.img_shape_y = img_resolution[0]
             self.img_shape_x = img_resolution[1]
+            
 
         # set the threshold for checkpointing based on image resolution
         self.checkpoint_threshold = (self.img_shape_y >> checkpoint_level) + 1

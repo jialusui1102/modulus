@@ -163,6 +163,7 @@ def main(cfg: DictConfig) -> None:
     
 
     model_args.update(standard_model_cfgs[cfg.model.name])
+
     if hasattr(cfg.model, "model_args"):  # override defaults from config file
         model_args.update(OmegaConf.to_container(cfg.model.model_args))
     if cfg.model.name == "regression":
@@ -177,7 +178,7 @@ def main(cfg: DictConfig) -> None:
         )
     model.train().requires_grad_(True).to(dist.device).to(memory_format=torch.channels_last)
     
-    model = torch.compile(model)
+    # model = torch.compile(model,mode="reduce-overhead")
     
     # Enable distributed data parallel if applicable
     if dist.world_size > 1:
@@ -200,9 +201,18 @@ def main(cfg: DictConfig) -> None:
             )
         regression_net = Module.from_checkpoint(regression_checkpoint_path)
         regression_net.eval().requires_grad_(False).to(dist.device).to(memory_format=torch.channels_last)
-        regression_net = torch.compile(regression_net)
+        # regression_net = torch.compile(regression_net)
         logger0.success("Loaded the pre-trained regression model")
 
+    # Reset since we are using a different mode.
+    if cfg.training.perf.use_torch_compile:
+        torch._dynamo.reset()
+        model = torch.compile(model,mode="reduce-overhead")
+        regression_net = torch.compile(regression_net)
+        
+    
+        
+        
     # Instantiate the loss function
     patch_num = getattr(cfg.training.hp, "patch_num", 1)
     #----------------------------------------#
@@ -301,6 +311,7 @@ def main(cfg: DictConfig) -> None:
                     #annotate num_accu_i
                     
                     for n_i in range(num_accumulation_rounds):
+                        # torch.compiler.cudagraph_mark_step_begin()
                         with nvtx.annotate(f"accumulation round {n_i}", color="Magenta"):
                             #annotate
                             with nvtx.annotate(f"loading data", color="green"):
@@ -315,7 +326,7 @@ def main(cfg: DictConfig) -> None:
                                 # torch._dynamo.mark_dynamic(img_lr, 1)
                             with nvtx.annotate(f"loss forward", color="green"):
                                 with torch.autocast("cuda", dtype=amp_dtype, enabled=enable_amp):
-                                    with torch._dynamo.compiled_autograd.enable(torch.compile):
+                                    # with torch._dynamo.compiled_autograd.enable(torch.compile):
                                         loss = loss_fn(
                                             net=model,
                                             img_clean=img_clean,

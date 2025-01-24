@@ -546,71 +546,79 @@ class ResLoss:
                 mode="bilinear",
             )
 
-            # patch generation from a single sample (not from random samples due to memory consumption of regression)
-            y_new = torch.zeros(
-                b * self.patch_num,
-                c_out,
-                self.patch_shape_y,
-                self.patch_shape_x,
-                device=img_clean.device,
-            )
-            y_lr_new = torch.zeros(
-                b * self.patch_num,
-                c_in + input_interp.shape[1],
-                self.patch_shape_y,
-                self.patch_shape_x,
-                device=img_clean.device,
-            )
-            global_index = torch.zeros(
-                b * self.patch_num,
-                2,
-                self.patch_shape_y,
-                self.patch_shape_x,
-                dtype=torch.int,
-                device=img_clean.device,
-            )
-            for i in range(self.patch_num):
-                rnd_x = random.randint(0, self.img_shape_x - self.patch_shape_x)
-                rnd_y = random.randint(0, self.img_shape_y - self.patch_shape_y)
-                y_new[b * i : b * (i + 1),] = y[
-                    :,
-                    :,
-                    rnd_y : rnd_y + self.patch_shape_y,
-                    rnd_x : rnd_x + self.patch_shape_x,
-                ]
-                global_index[b * i : b * (i + 1),] = grid[
-                    :,
-                    :,
-                    rnd_y : rnd_y + self.patch_shape_y,
-                    rnd_x : rnd_x + self.patch_shape_x,
-                ]
-                y_lr_new[b * i : b * (i + 1),] = torch.cat(
-                    (
-                        y_lr[
-                            :,
-                            :,
-                            rnd_y : rnd_y + self.patch_shape_y,
-                            rnd_x : rnd_x + self.patch_shape_x,
-                        ],
-                        input_interp,
-                    ),
-                    1,
+            #start the patch iterations:
+            
+            patch_iters = 7
+            loss_iter = 0.0
+            for pi in range(patch_iters):
+                
+                # patch generation from a single sample (not from random samples due to memory consumption of regression)
+                y_new = torch.zeros(
+                    b * self.patch_num,
+                    c_out,
+                    self.patch_shape_y,
+                    self.patch_shape_x,
+                    device=img_clean.device,
                 )
-            y = y_new
-            y_lr = y_lr_new
-        latent = y + torch.randn_like(y) * sigma
-        # pdb.set_trace()
-        D_yn = net(
-            latent,
-            y_lr,
-            sigma,
-            labels,
-            global_index=global_index,
-            augment_labels=augment_labels,
-        )
-        loss = weight * ((D_yn - y) ** 2)
+                y_lr_new = torch.zeros(
+                    b * self.patch_num,
+                    c_in + input_interp.shape[1],
+                    self.patch_shape_y,
+                    self.patch_shape_x,
+                    device=img_clean.device,
+                )
+                global_index = torch.zeros(
+                    b * self.patch_num,
+                    2,
+                    self.patch_shape_y,
+                    self.patch_shape_x,
+                    dtype=torch.int,
+                    device=img_clean.device,
+                )
+                for i in range(self.patch_num):
+                    rnd_x = random.randint(0, self.img_shape_x - self.patch_shape_x)
+                    rnd_y = random.randint(0, self.img_shape_y - self.patch_shape_y)
+                    y_new[b * i : b * (i + 1),] = y[
+                        :,
+                        :,
+                        rnd_y : rnd_y + self.patch_shape_y,
+                        rnd_x : rnd_x + self.patch_shape_x,
+                    ]
+                    global_index[b * i : b * (i + 1),] = grid[
+                        :,
+                        :,
+                        rnd_y : rnd_y + self.patch_shape_y,
+                        rnd_x : rnd_x + self.patch_shape_x,
+                    ]
+                    y_lr_new[b * i : b * (i + 1),] = torch.cat(
+                        (
+                            y_lr[
+                                :,
+                                :,
+                                rnd_y : rnd_y + self.patch_shape_y,
+                                rnd_x : rnd_x + self.patch_shape_x,
+                            ],
+                            input_interp,
+                        ),
+                        1,
+                    )
+                y = y_new
+                y_lr = y_lr_new
+            latent = y + torch.randn_like(y) * sigma
+            # pdb.set_trace()
+            D_yn = net(
+                latent,
+                y_lr,
+                sigma,
+                labels,
+                global_index=global_index,
+                augment_labels=augment_labels,
+            )
+            loss = weight * ((D_yn - y) ** 2)
+            
+            loss_iter += loss
 
-        return loss
+        return loss_iter/patch_iters
 
 
 class VELoss_dfsr:

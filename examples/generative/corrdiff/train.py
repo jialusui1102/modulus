@@ -167,6 +167,7 @@ def main(cfg: DictConfig) -> None:
         )
     model.train().requires_grad_(True).to(dist.device)
     
+    
 
     # Enable distributed data parallel if applicable
     if dist.world_size > 1:
@@ -190,7 +191,7 @@ def main(cfg: DictConfig) -> None:
         regression_net = Module.from_checkpoint(regression_checkpoint_path)
         regression_net.eval().requires_grad_(False).to(dist.device)
         logger0.success("Loaded the pre-trained regression model")
-
+        pdb.set_trace()
     # Instantiate the loss function
     patch_num = getattr(cfg.training.hp, "patch_num", 1)
     #----------------------------------------#

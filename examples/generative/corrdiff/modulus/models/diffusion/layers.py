@@ -360,7 +360,7 @@ class AttentionOp(torch.autograd.Function):
         ) / np.sqrt(k.shape[1])
         return dq, dk
 
-@torch.compile
+@torch.compile()
 class UNetBlock(torch.nn.Module):
     """
     Unified U-Net block with optional up/downsampling and self-attention. Represents
@@ -438,9 +438,13 @@ class UNetBlock(torch.nn.Module):
             if num_heads is not None
             else out_channels // channels_per_head
         )
-        self.dropout = dropout
-        self.skip_scale = skip_scale
-        self.adaptive_scale = adaptive_scale
+        # self.dropout = dropout
+        # self.skip_scale = skip_scale
+        # self.adaptive_scale = adaptive_scale
+         # Convert them to tensors and register as buffers:
+        self.register_buffer("dropout", torch.tensor(dropout))
+        self.register_buffer("skip_scale", torch.tensor(skip_scale))
+        self.register_buffer("adaptive_scale", torch.tensor(adaptive_scale))
 
         self.norm0 = GroupNorm(num_channels=in_channels, eps=eps)
         self.conv0 = Conv2d(
@@ -491,6 +495,7 @@ class UNetBlock(torch.nn.Module):
             )
 
     def forward(self, x, emb):
+        # print(f"skip scale for this pass is {self.skip_scale}")
         torch.cuda.nvtx.range_push("UNetBlock")
         orig = x
         x = self.conv0(silu(self.norm0(x)))
@@ -507,6 +512,7 @@ class UNetBlock(torch.nn.Module):
         )
         x = x.add_(self.skip(orig) if self.skip is not None else orig)
         x = x * self.skip_scale
+      
 
         if self.num_heads:
             q, k, v = (
@@ -520,6 +526,8 @@ class UNetBlock(torch.nn.Module):
             a = torch.einsum("nqk,nck->ncq", w, v)
             x = self.proj(a.reshape(*x.shape)).add_(x)
             x = x * self.skip_scale
+     
+            
         torch.cuda.nvtx.range_pop()
         return x
 
