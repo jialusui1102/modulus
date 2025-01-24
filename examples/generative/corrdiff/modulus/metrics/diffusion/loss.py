@@ -547,7 +547,8 @@ class ResLoss:
             )
 
             #start the patch iterations:
-            
+            y_orig = y
+            y_lr_orig = y_lr
             patch_iters = 7
             loss_iter = 0.0
             for pi in range(patch_iters):
@@ -576,9 +577,11 @@ class ResLoss:
                     device=img_clean.device,
                 )
                 for i in range(self.patch_num):
+                    
                     rnd_x = random.randint(0, self.img_shape_x - self.patch_shape_x)
                     rnd_y = random.randint(0, self.img_shape_y - self.patch_shape_y)
-                    y_new[b * i : b * (i + 1),] = y[
+                    # pdb.set_trace()
+                    y_new[b * i : b * (i + 1),] = y_orig[
                         :,
                         :,
                         rnd_y : rnd_y + self.patch_shape_y,
@@ -592,7 +595,7 @@ class ResLoss:
                     ]
                     y_lr_new[b * i : b * (i + 1),] = torch.cat(
                         (
-                            y_lr[
+                            y_lr_orig[
                                 :,
                                 :,
                                 rnd_y : rnd_y + self.patch_shape_y,
@@ -604,19 +607,19 @@ class ResLoss:
                     )
                 y = y_new
                 y_lr = y_lr_new
-            latent = y + torch.randn_like(y) * sigma
-            # pdb.set_trace()
-            D_yn = net(
-                latent,
-                y_lr,
-                sigma,
-                labels,
-                global_index=global_index,
-                augment_labels=augment_labels,
-            )
-            loss = weight * ((D_yn - y) ** 2)
-            
-            loss_iter += loss
+                latent = y + torch.randn_like(y) * sigma
+                # pdb.set_trace()
+                D_yn = net(
+                    latent,
+                    y_lr,
+                    sigma,
+                    labels,
+                    global_index=global_index,
+                    augment_labels=augment_labels,
+                )
+                loss = weight * ((D_yn - y) ** 2)
+                
+                loss_iter += loss
 
         return loss_iter/patch_iters
 
