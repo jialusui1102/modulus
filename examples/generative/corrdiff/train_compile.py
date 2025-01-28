@@ -44,7 +44,7 @@ torch._dynamo.reset()
 torch._dynamo.config.cache_size_limit = 64  # Set to a higher value
 torch._dynamo.config.force_parameter_static_shapes = False
 
-torch._dynamo.config.suppress_errors = True
+# torch._dynamo.config.suppress_errors = True
 torch._dynamo.config.compiled_autograd = True
 
 
@@ -328,7 +328,8 @@ def main(cfg: DictConfig) -> None:
                             with nvtx.annotate(f"loss backward", color="yellow"):
                                 # torch._dynamo.config.compiled_autograd = True
                                 # torch.compile(lambda: loss.backward(), fullgraph=True)()
-                                loss.backward()
+                                with torch._dynamo.utils.maybe_enable_compiled_autograd(True, fullgraph=True):
+                                    loss.backward()
                         
                     #check model weights
                     # for name, weight in model.named_parameters():
