@@ -176,7 +176,7 @@ def main(cfg: DictConfig) -> None:
             **model_args,
         )
     model.train().requires_grad_(True).to(dist.device).to(memory_format=torch.channels_last)
-    
+    # model.to(amp_dtype) 
     model = torch.compile(model)
     
     # Enable distributed data parallel if applicable
@@ -200,6 +200,7 @@ def main(cfg: DictConfig) -> None:
             )
         regression_net = Module.from_checkpoint(regression_checkpoint_path)
         regression_net.eval().requires_grad_(False).to(dist.device).to(memory_format=torch.channels_last)
+        # regression_net.to(amp_dtype) 
         regression_net = torch.compile(regression_net)
         logger0.success("Loaded the pre-trained regression model")
 
@@ -314,21 +315,25 @@ def main(cfg: DictConfig) -> None:
                                 # torch._dynamo.mark_dynamic(img_clean, 1)
                                 # torch._dynamo.mark_dynamic(img_lr, 1)
                             with nvtx.annotate(f"loss forward", color="green"):
-                                with torch.autocast("cuda", dtype=amp_dtype, enabled=enable_amp):
-                                    with torch._dynamo.compiled_autograd.enable(torch.compile):
-                                        loss = loss_fn(
-                                            net=model,
-                                            img_clean=img_clean,
-                                            img_lr=img_lr,
-                                            labels=labels,
-                                            augment_pipe=None,
-                                        )
-                                loss = loss.sum() / batch_size_per_gpu
-                                loss_accum += loss / num_accumulation_rounds
+                                # patch_iters = 2
+                                # reg_res = None
+                                # for i in patch_iters:
+                                    with torch.autocast("cuda", dtype=amp_dtype, enabled=enable_amp):
+                                        with torch._dynamo.compiled_autograd.enable(torch.compile):
+                                            loss= loss_fn(
+                                                net=model,
+                                                img_clean=img_clean,
+                                                img_lr=img_lr,
+                                                labels=labels,
+                                                augment_pipe=None,
+                                                # reg_res = reg_res
+                                            )
+                                    loss = loss.sum() / batch_size_per_gpu
+                                    loss_accum += loss / num_accumulation_rounds
                             with nvtx.annotate(f"loss backward", color="yellow"):
                                 # torch._dynamo.config.compiled_autograd = True
                                 # torch.compile(lambda: loss.backward(), fullgraph=True)()
-                                with torch._dynamo.utils.maybe_enable_compiled_autograd(True, fullgraph=True):
+                                # with torch._dynamo. utils.maybe_enable_compiled_autograd(True, fullgraph=True):
                                     loss.backward()
                         
                     #check model weights

@@ -31,7 +31,14 @@ import pdb
 import nvtx
 from apex.contrib.group_norm import GroupNorm as ApexGroupNorm
 
+@torch.compiler.disable
+def nvtx_wrapper(name):
+    torch.cuda.nvtx.range_push(name)
 
+@torch.compiler.disable
+def nvtx_pop():
+    torch.cuda.nvtx.range_pop()
+    
 class Linear(torch.nn.Module):
     """
     A fully connected (dense) layer implementation. The layer's weights and biases can
@@ -84,9 +91,13 @@ class Linear(torch.nn.Module):
         )
 
     def forward(self, x):
-        x = x @ self.weight.to(x.dtype).t()
+        # x = x @ self.weight.to(x.dtype).t()
+        x = x @ self.weight.t()
+        
         if self.bias is not None:
-            x = x.add_(self.bias.to(x.dtype))
+            # x = x.add_(self.bias.to(x.dtype))
+            x = x.add_(self.bias)
+            
         return x
 
 # @torch.compile
@@ -179,10 +190,13 @@ class Conv2d(torch.nn.Module):
         self.register_buffer("resample_filter", f if up or down else None)
 
     def forward(self, x):
-        w = self.weight.to(x.dtype) if self.weight is not None else None
-        b = self.bias.to(x.dtype) if self.bias is not None else None
+        # w = self.weight.to(x.dtype) if self.weight is not None else None
+        # b = self.bias.to(x.dtype) if self.bias is not None else None
+        w = self.weight if self.weight is not None else None
+        b = self.bias if self.bias is not None else None
         f = (
-            self.resample_filter.to(x.dtype)
+            # self.resample_filter.to(x.dtype)
+            self.resample_filter
             if self.resample_filter is not None
             else None
         )
@@ -281,7 +295,7 @@ class GroupNorm(torch.nn.Module):
         )
         
         
-
+    @torch._dynamo.disable()
     def forward(self, x):
         # if self.training:
             # Use default torch implementation of GroupNorm for training
@@ -316,8 +330,11 @@ class GroupNorm(torch.nn.Module):
         # nvidia apex groupnorm (support channelslast)
         #use nvidia apex groupnorm
         torch.cuda.nvtx.range_push(f"GroupNorm, input shape {x.shape}, numgroups {self.num_groups}")
+        # nvtx_wrapper(f"GroupNorm, input shape {x.shape}, numgroups {self.num_groups}")
+        # with torch.profiler.record_function(f"GroupNorm, input shape {x.shape}, numgroups {self.num_groups}"):
         x = self.gn(x)
         torch.cuda.nvtx.range_pop()
+        # nvtx_pop()
         return x
 
 
@@ -491,23 +508,43 @@ class UNetBlock(torch.nn.Module):
             )
 
     def forward(self, x, emb):
+        # with torch.profiler.record_function("UNetBlock"):
         torch.cuda.nvtx.range_push("UNetBlock")
+        # nvtx_wrapper("UnetBlock")
+        # torch.cuda.nvtx.range_push("conv,silu,norm1")
         orig = x
         x = self.conv0(silu(self.norm0(x)))
-
-        params = self.affine(emb).unsqueeze(2).unsqueeze(3).to(x.dtype)
+        # torch.cuda.nvtx.range_pop()
+        
+        # torch.cuda.nvtx.range_push("affine")
+        params = self.affine(emb).unsqueeze(2).unsqueeze(3)#.to(x.dtype)
+        # torch.cuda.nvtx.range_pop()
+        
         if self.adaptive_scale:
+            # torch.cuda.nvtx.range_push("adaptive scale if") 
             scale, shift = params.chunk(chunks=2, dim=1)
             x = silu(torch.addcmul(shift, self.norm1(x), scale + 1))
+            # torch.cuda.nvtx.range_pop()    
         else:
+            # torch.cuda.nvtx.range_push("adaptive scale else") 
             x = silu(self.norm1(x.add_(params)))
-
+            # torch.cuda.nvtx.range_pop()    
+            
+        # torch.cuda.nvtx.range_push("conv1") 
         x = self.conv1(
             torch.nn.functional.dropout(x, p=self.dropout, training=self.training)
         )
+        # torch.cuda.nvtx.range_pop()      
+        
+        # torch.cuda.nvtx.range_push("add") 
         x = x.add_(self.skip(orig) if self.skip is not None else orig)
+        # torch.cuda.nvtx.range_pop()      
+        
+        # torch.cuda.nvtx.range_push("mult") 
         x = x * self.skip_scale
+        # torch.cuda.nvtx.range_pop()      
 
+        # torch.cuda.nvtx.range_push("num heads") 
         if self.num_heads:
             q, k, v = (
                 self.qkv(self.norm2(x))
@@ -520,7 +557,10 @@ class UNetBlock(torch.nn.Module):
             a = torch.einsum("nqk,nck->ncq", w, v)
             x = self.proj(a.reshape(*x.shape)).add_(x)
             x = x * self.skip_scale
+        # torch.cuda.nvtx.range_pop()      
+        
         torch.cuda.nvtx.range_pop()
+        # nvtx_pop()
         return x
 
 
@@ -554,7 +594,9 @@ class PositionalEmbedding(torch.nn.Module):
         )
         freqs = freqs / (self.num_channels // 2 - (1 if self.endpoint else 0))
         freqs = (1 / self.max_positions) ** freqs
-        x = x.ger(freqs.to(x.dtype))
+        # x = x.ger(freqs.to(x.dtype))
+        x = x.ger(freqs)
+        
         x = torch.cat([x.cos(), x.sin()], dim=1)
         return x
 
@@ -583,6 +625,8 @@ class FourierEmbedding(torch.nn.Module):
         self.register_buffer("freqs", torch.randn(num_channels // 2) * scale)
 
     def forward(self, x):
-        x = x.ger((2 * np.pi * self.freqs).to(x.dtype))
+        # x = x.ger((2 * np.pi * self.freqs).to(x.dtype))
+        x = x.ger((2 * np.pi * self.freqs))
+        
         x = torch.cat([x.cos(), x.sin()], dim=1)
         return x

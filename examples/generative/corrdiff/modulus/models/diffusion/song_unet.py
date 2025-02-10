@@ -517,7 +517,7 @@ class SongUNetPosEmbd(SongUNet):
         self.N_grid_channels = N_grid_channels
         self.pos_embd = self._get_positional_embedding()
 
-    @nvtx.annotate(message="SongUNet", color="blue")
+    @nvtx.annotate(message="SongUNetPos", color="blue")
     def forward(
         self, x, noise_labels, class_labels, global_index=None, augment_labels=None
     ):
