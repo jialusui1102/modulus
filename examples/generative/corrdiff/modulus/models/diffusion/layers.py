@@ -377,7 +377,7 @@ class AttentionOp(torch.autograd.Function):
         ) / np.sqrt(k.shape[1])
         return dq, dk
 
-@torch.compile
+# @torch.compile
 class UNetBlock(torch.nn.Module):
     """
     Unified U-Net block with optional up/downsampling and self-attention. Represents

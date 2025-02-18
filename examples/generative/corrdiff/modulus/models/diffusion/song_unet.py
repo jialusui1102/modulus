@@ -515,7 +515,11 @@ class SongUNetPosEmbd(SongUNet):
 
         self.gridtype = gridtype
         self.N_grid_channels = N_grid_channels
-        self.pos_embd = self._get_positional_embedding()
+        if self.gridtype == "learnable": #if the grid is learnable, make it a part of the model
+            self.pos_embd = torch.nn.Parameter(self._get_positional_embedding(),requires_grad=True)
+        else:
+            self.pos_embd = self._get_positional_embedding().pin_memory()
+            
 
     @nvtx.annotate(message="SongUNetPos", color="blue")
     def forward(
@@ -529,10 +533,18 @@ class SongUNetPosEmbd(SongUNet):
         return super().forward(x, noise_labels, class_labels, augment_labels)
 
     def positional_embedding_indexing(self, x, global_index):
+        if self.gridtype != "learnable":
+            if self.pos_embd.device != x.device:
+                self.pos_embd = self.pos_embd.pin_memory().to(x.device, dtype=x.dtype, non_blocking=True)
+            pos_embd_tmp = self.pos_embd
+        else:
+            pos_embd_tmp = self.pos_embd.data
         if global_index is None:
             selected_pos_embd = (
-                self.pos_embd.to(x.device)
-                .to(x.dtype)[None]
+                # self.pos_embd.to(x.device)
+                # .to(x.dtype)[None]
+                # self.pos_embd.pin_memory().to(x.device, dtype=x.dtype, non_blocking=True)[None]
+                pos_embd_tmp[None]
                 .expand((x.shape[0], -1, -1, -1))
             )
         else:
@@ -543,7 +555,10 @@ class SongUNetPosEmbd(SongUNet):
             global_index = torch.reshape(
                 torch.permute(global_index, (1, 0, 2, 3)), (2, -1)
             )  # (B, 2, X, Y) to (2, B*X*Y)
-            selected_pos_embd = self.pos_embd.to(x.device)[
+            
+            # selected_pos_embd = self.pos_embd.to(x.device)[
+            # selected_pos_embd = self.pos_embd.pin_memory().to(x.device, dtype=x.dtype, non_blocking=True)[
+            selected_pos_embd = pos_embd_tmp[
                 :, global_index[0], global_index[1]
             ]  # (N_pe, B*X*Y)
             selected_pos_embd = (
@@ -551,9 +566,10 @@ class SongUNetPosEmbd(SongUNet):
                     torch.reshape(selected_pos_embd, (self.pos_embd.shape[0], B, X, Y)),
                     (1, 0, 2, 3),
                 )
-                .to(x.device)
-                .to(x.dtype)
+                # .to(x.device)
+                # .to(x.dtype)
             )  # (B, N_pe, X, Y)
+            # pdb.set_trace()
         return selected_pos_embd
 
     def _get_positional_embedding(self):
