@@ -447,6 +447,7 @@ class ResLoss:
         P_std: float = 1.2,
         sigma_data: float = 0.5,
         hr_mean_conditioning: bool = False,
+        reg_res: Optional[torch.Tensor] = None
     ):
         self.unet = regression_net
         self.P_mean = P_mean
@@ -487,12 +488,14 @@ class ResLoss:
             A tensor representing the loss calculated based on the network's
             predictions.
         """
-
+        torch.cuda.nvtx.range_push(f"calculate sigma, weight")
         rnd_normal = torch.randn([img_clean.shape[0], 1, 1, 1], device=img_clean.device)
         sigma = (rnd_normal * self.P_std + self.P_mean).exp()
         weight = (sigma**2 + self.sigma_data**2) / (sigma * self.sigma_data) ** 2
-
+        torch.cuda.nvtx.range_pop()
+        
         # augment for conditional generaiton
+        torch.cuda.nvtx.range_push(f"augment for conditional generation")
         img_tot = torch.cat((img_clean, img_lr), dim=1)
         y_tot, augment_labels = (
             augment_pipe(img_tot) if augment_pipe is not None else (img_tot, None)
@@ -500,14 +503,18 @@ class ResLoss:
         y = y_tot[:, : img_clean.shape[1], :, :]
         y_lr = y_tot[:, img_clean.shape[1] :, :, :]
         y_lr_res = y_lr
+        torch.cuda.nvtx.range_pop()
 
+        torch.cuda.nvtx.range_push(f"global index")
         # global index
         b = y.shape[0]
-        Nx = torch.arange(self.img_shape_x).int()
-        Ny = torch.arange(self.img_shape_y).int()
+        Nx = torch.arange(self.img_shape_x,device=img_clean.device).int()
+        Ny = torch.arange(self.img_shape_y,device=img_clean.device).int()
         grid = torch.stack(torch.meshgrid(Ny, Nx, indexing="ij"), dim=0)[
             None,
         ].expand(b, -1, -1, -1)
+        torch.cuda.nvtx.range_pop()
+        
         # pdb.set_trace()
         # form residual
         y_mean = self.unet(
@@ -520,17 +527,26 @@ class ResLoss:
 
         y = y - y_mean
 
+        torch.cuda.nvtx.range_push(f"mean conditioning cat")
         if self.hr_mean_conditioning:
-            y_lr = torch.cat((y_mean, y_lr), dim=1).contiguous()
+            y_lr = torch.cat((y_mean, y_lr), dim=1) #.contiguous()
+        torch.cuda.nvtx.range_pop()
+        
+        
         global_index = None
         # patchified training
         # conditioning: cat(y_mean, y_lr, input_interp, pos_embd), 4+12+100+4
+        torch.cuda.nvtx.range_push(f"patch training")
+        
         if (
             self.img_shape_x != self.patch_shape_x
             or self.img_shape_y != self.patch_shape_y
         ):
+            
             c_in = y_lr.shape[1]
             c_out = y.shape[1]
+            
+            torch.cuda.nvtx.range_push(f"calculate sigma, weight")
             rnd_normal = torch.randn(
                 [img_clean.shape[0] * self.patch_num, 1, 1, 1], device=img_clean.device
             )
@@ -538,14 +554,18 @@ class ResLoss:
             weight = (sigma**2 + self.sigma_data**2) / (
                 sigma * self.sigma_data
             ) ** 2
+            torch.cuda.nvtx.range_pop()
 
             # global interpolation
+            torch.cuda.nvtx.range_push(f"global interpolation")
             input_interp = torch.nn.functional.interpolate(
                 img_lr,
                 (self.patch_shape_y, self.patch_shape_x),
                 mode="bilinear",
             )
+            torch.cuda.nvtx.range_pop()
 
+            torch.cuda.nvtx.range_push(f"initialize tensors")
             # patch generation from a single sample (not from random samples due to memory consumption of regression)
             y_new = torch.zeros(
                 b * self.patch_num,
@@ -569,7 +589,11 @@ class ResLoss:
                 dtype=torch.int,
                 device=img_clean.device,
             )
+            torch.cuda.nvtx.range_pop()
+            
+            torch.cuda.nvtx.range_push(f"patch iterating")
             for i in range(self.patch_num):
+                torch.cuda.nvtx.range_push(f"patch iterating {i}")
                 rnd_x = random.randint(0, self.img_shape_x - self.patch_shape_x)
                 rnd_y = random.randint(0, self.img_shape_y - self.patch_shape_y)
                 y_new[b * i : b * (i + 1),] = y[
@@ -596,8 +620,15 @@ class ResLoss:
                     ),
                     1,
                 )
+                torch.cuda.nvtx.range_pop()
+                
             y = y_new
             y_lr = y_lr_new
+            torch.cuda.nvtx.range_pop()
+            
+            
+        torch.cuda.nvtx.range_pop()
+        
         latent = y + torch.randn_like(y) * sigma
         # pdb.set_trace()
         D_yn = net(
