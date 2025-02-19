@@ -535,7 +535,7 @@ class SongUNetPosEmbd(SongUNet):
     def positional_embedding_indexing(self, x, global_index):
         if self.gridtype != "learnable":
             if self.pos_embd.device != x.device:
-                self.pos_embd = self.pos_embd.pin_memory().to(x.device, dtype=x.dtype, non_blocking=True)
+                self.pos_embd = self.pos_embd.to(x.device, dtype=x.dtype, non_blocking=True)
             pos_embd_tmp = self.pos_embd
         else:
             pos_embd_tmp = self.pos_embd.data
