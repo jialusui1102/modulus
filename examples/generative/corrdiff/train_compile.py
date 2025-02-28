@@ -176,8 +176,11 @@ def main(cfg: DictConfig) -> None:
             **model_args,
         )
     model.train().requires_grad_(True).to(dist.device).to(memory_format=torch.channels_last)
-    # model.to(amp_dtype) 
-    model = torch.compile(model)
+    # if enable_amp:
+    #     model = model.to(amp_dtype) 
+        # pdb.set_trace()
+    # model = torch.compile(model)
+
     
     # Enable distributed data parallel if applicable
     if dist.world_size > 1:
@@ -200,12 +203,15 @@ def main(cfg: DictConfig) -> None:
             )
         regression_net = Module.from_checkpoint(regression_checkpoint_path)
         regression_net.eval().requires_grad_(False).to(dist.device).to(memory_format=torch.channels_last)
-        # regression_net.to(amp_dtype) 
-        regression_net = torch.compile(regression_net)
+        # if enable_amp:
+        #     regression_net = regression_net.to(amp_dtype) 
+        # regression_net = torch.compile(regression_net)
         logger0.success("Loaded the pre-trained regression model")
 
     # Instantiate the loss function
     patch_num = getattr(cfg.training.hp, "patch_num", 1)
+    max_patch_per_gpu = getattr(cfg.training.hp, "max_patch_per_gpu", 1)
+    
     #----------------------------------------#
     # print("printing model parameters.........\n")
     # print("img_in_channels is",img_in_channels)
@@ -216,18 +222,20 @@ def main(cfg: DictConfig) -> None:
 
     # pdb.set_trace()
 
-    if cfg.model.name in ("diffusion", "patched_diffusion"):
-        loss_fn = ResLoss(
-            regression_net=regression_net,
-            img_shape_x=img_shape[1],
-            img_shape_y=img_shape[0],
-            patch_shape_x=patch_shape[1],
-            patch_shape_y=patch_shape[0],
-            patch_num=patch_num,
-            hr_mean_conditioning=cfg.model.hr_mean_conditioning,
-        )
-    elif cfg.model.name == "regression":
-        loss_fn = RegressionLoss()
+    # if cfg.model.name in ("diffusion", "patched_diffusion"):
+    #     #update here: calculate patch per iteration based on config
+        
+    #     loss_fn = ResLoss(
+    #         regression_net=regression_net,
+    #         img_shape_x=img_shape[1],
+    #         img_shape_y=img_shape[0],
+    #         patch_shape_x=patch_shape[1],
+    #         patch_shape_y=patch_shape[0],
+    #         patch_num=max_patch_per_gpu,
+    #         hr_mean_conditioning=cfg.model.hr_mean_conditioning,
+    #     )
+    # elif cfg.model.name == "regression":
+    #     loss_fn = RegressionLoss()
 
     # Instantiate the optimizer
     optimizer = torch.optim.Adam(
@@ -244,9 +252,32 @@ def main(cfg: DictConfig) -> None:
         cfg.training.hp.batch_size_per_gpu,
         dist.world_size,
     )
+    
 
     #added this for correct loss scaling
     batch_size_per_gpu = cfg.training.hp.batch_size_per_gpu
+    
+    #calculate patch per iter
+    max_patch_num_per_iter = min(patch_num, (max_patch_per_gpu // batch_size_per_gpu))  # Ensure at least 1 patch per iter
+    patch_iterations = (patch_num + max_patch_num_per_iter - 1) // max_patch_num_per_iter
+    patch_nums_iter = [min(max_patch_num_per_iter, patch_num - i * max_patch_num_per_iter) for i in range(patch_iterations)]
+    print(f"max_patch_num_per_iter is {max_patch_num_per_iter}, patch_iterations is {patch_iterations}, patch_nums_iter is {patch_nums_iter}")
+    
+    if cfg.model.name in ("diffusion", "patched_diffusion"):
+        #update here: calculate patch per iteration based on config
+        
+        loss_fn = ResLoss(
+            regression_net=regression_net,
+            img_shape_x=img_shape[1],
+            img_shape_y=img_shape[0],
+            patch_shape_x=patch_shape[1],
+            patch_shape_y=patch_shape[0],
+            patch_num=max_patch_num_per_iter,
+            hr_mean_conditioning=cfg.model.hr_mean_conditioning,
+        )
+    elif cfg.model.name == "regression":
+        loss_fn = RegressionLoss()
+        
     logger0.info(f"Using {num_accumulation_rounds} gradient accumulation rounds")
     logger0.info(f"Batch GPU total is {batch_gpu_total}")
     logger0.info(f"Total GPU is {dist.world_size}")
@@ -278,15 +309,40 @@ def main(cfg: DictConfig) -> None:
     done = False
     tick_start_nimg = cur_nimg
     tick_start_time = time.time()
-    # with torch.autograd.profiler.emit_nvtx():
+    # # with torch.autograd.profiler.emit_nvtx():
+    # def check_gradient_memory_format(module, grad_input, grad_output):
+    #     if grad_input and grad_input[0] is not None:
+    #         grad_input = tuple(g.clone() if g is not None else None for g in grad_input)  # Clone to avoid modifying views
+    #         is_channels_last_in = grad_input[0].is_contiguous(memory_format=torch.channels_last)
+    #         print(f"{module.__class__.__name__} - ginput is_channels_last: {is_channels_last_in}")
+
+    #     if grad_output and grad_output[0] is not None:
+    #         grad_output = tuple(g.clone() if g is not None else None for g in grad_output)  # Clone to avoid modifying views
+    #         is_channels_last_out = grad_output[0].is_contiguous(memory_format=torch.channels_last)
+    #         print(f"{module.__class__.__name__} - goutput is_channels_last: {is_channels_last_out}")
+
+    # for module in model.modules():
+    #     if len(list(module.children())) == 0:  # No submodules → it's a leaf module
+    #         print(module)
+    #         pdb.set_trace()
+
+    # def register_hooks(module):
+    #     if len(list(module.children())) == 0:  # Only apply to leaf modules
+    #         module.register_full_backward_hook(lambda m, gi, go: print("ginput shape:{}, stride:{}, goutput shape:{}, stride:{}".format(
+    # gi[0].shape, gi[0].stride(), go[0].shape, go[0].stride())))
+
+    # for module in model.modules():
+    #     register_hooks(module)
+
     
+    input_dtype = torch.float32
+    if enable_amp:
+        input_dtype = amp_dtype
+
+        
     with torch.cuda.profiler.profile():
         with torch.autograd.profiler.emit_nvtx():
             while not done:
-                # tick_start_nimg = cur_nimg
-                # tick_start_time = time.time()
-                # print(f"cur_nimg is {cur_nimg}")
-                # print(f"tick_start is {tick_start_nimg}")
                 if cur_nimg - tick_start_nimg == 4 * cfg.training.hp.total_batch_size:
                         logger0.info(f"Starting Profiler at {cur_nimg}")
                         torch.cuda.profiler.start()
@@ -299,42 +355,43 @@ def main(cfg: DictConfig) -> None:
                     
                     optimizer.zero_grad(set_to_none=True)
                     loss_accum = 0
-                    #annotate num_accu_i
                     
                     for n_i in range(num_accumulation_rounds):
                         with nvtx.annotate(f"accumulation round {n_i}", color="Magenta"):
-                            #annotate
                             with nvtx.annotate(f"loading data", color="green"):
-                                # pdb.set_trace()
                                 img_clean, img_lr, labels = next(dataset_iterator)
                                 # Transfer data to GPU asynchronously and perform type conversion
-                                img_clean = img_clean.to(dist.device, dtype=torch.float32, non_blocking=True).to(memory_format=torch.channels_last)#.contiguous()
-                                img_lr = img_lr.to(dist.device, dtype=torch.float32, non_blocking=True).to(memory_format=torch.channels_last)#.contiguous()
-                                # pdb.set_trace()
+                                img_clean = img_clean.to(dist.device, dtype=input_dtype, non_blocking=True).to(memory_format=torch.channels_last)#.contiguous()
+                                img_lr = img_lr.to(dist.device, dtype=input_dtype, non_blocking=True).to(memory_format=torch.channels_last)#.contiguous()
                                 labels = labels.to(dist.device, non_blocking=True)#.contiguous()
-                                # torch._dynamo.mark_dynamic(img_clean, 1)
-                                # torch._dynamo.mark_dynamic(img_lr, 1)
-                            with nvtx.annotate(f"loss forward", color="green"):
-                                # patch_iters = 2
-                                # reg_res = None
-                                # for i in patch_iters:
-                                    with torch.autocast("cuda", dtype=amp_dtype, enabled=enable_amp):
-                                        with torch._dynamo.compiled_autograd.enable(torch.compile):
-                                            loss= loss_fn(
-                                                net=model,
-                                                img_clean=img_clean,
-                                                img_lr=img_lr,
-                                                labels=labels,
-                                                augment_pipe=None,
-                                                # reg_res = reg_res
-                                            )
+                            
+                            # patch_iters = 2
+                            y_mean = None
+                            with nvtx.annotate(f"patch iterations", color="green"):
+                                for patch_num_per_iter in patch_nums_iter:
+                                    
+                                    with nvtx.annotate(f"loss forward", color="green"):
+                                        with torch.autocast("cuda", dtype=amp_dtype, enabled=enable_amp):
+                                            with torch._dynamo.compiled_autograd.enable(torch.compile):
+                                                loss,y_mean= loss_fn(
+                                                    net=model,
+                                                    img_clean=img_clean,
+                                                    img_lr=img_lr,
+                                                    labels=labels,
+                                                    augment_pipe=None,
+                                                    patch_num_per_iter=patch_num_per_iter,
+                                                    y_mean = y_mean
+                                                )
+                                            
+                
                                     loss = loss.sum() / batch_size_per_gpu
                                     loss_accum += loss / num_accumulation_rounds
-                            with nvtx.annotate(f"loss backward", color="yellow"):
-                                # torch._dynamo.config.compiled_autograd = True
-                                # torch.compile(lambda: loss.backward(), fullgraph=True)()
-                                # with torch._dynamo. utils.maybe_enable_compiled_autograd(True, fullgraph=True):
-                                    loss.backward()
+
+                                    with nvtx.annotate(f"loss backward", color="yellow"):
+                                        # torch._dynamo.config.compiled_autograd = True
+                                        # torch.compile(lambda: loss.backward(), fullgraph=True)()
+                                        # with torch._dynamo. utils.maybe_enable_compiled_autograd(True, fullgraph=True):
+                                            loss.backward()
                         
                     #check model weights
                     # for name, weight in model.named_parameters():

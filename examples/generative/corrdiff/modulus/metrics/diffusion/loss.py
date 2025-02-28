@@ -447,7 +447,6 @@ class ResLoss:
         P_std: float = 1.2,
         sigma_data: float = 0.5,
         hr_mean_conditioning: bool = False,
-        reg_res: Optional[torch.Tensor] = None
     ):
         self.unet = regression_net
         self.P_mean = P_mean
@@ -460,7 +459,7 @@ class ResLoss:
         self.patch_num = patch_num
         self.hr_mean_conditioning = hr_mean_conditioning
 
-    def __call__(self, net, img_clean, img_lr, labels=None, augment_pipe=None):
+    def __call__(self, net, img_clean, img_lr, y_mean, patch_num_per_iter, labels=None, augment_pipe=None):
         """
         Calculate and return the loss for denoising score matching.
 
@@ -488,6 +487,9 @@ class ResLoss:
             A tensor representing the loss calculated based on the network's
             predictions.
         """
+        
+        self.patch_num = patch_num_per_iter
+        
         torch.cuda.nvtx.range_push(f"calculate sigma, weight")
         rnd_normal = torch.randn([img_clean.shape[0], 1, 1, 1], device=img_clean.device)
         sigma = (rnd_normal * self.P_std + self.P_mean).exp()
@@ -502,7 +504,8 @@ class ResLoss:
         )
         y = y_tot[:, : img_clean.shape[1], :, :]
         y_lr = y_tot[:, img_clean.shape[1] :, :, :]
-        y_lr_res = y_lr
+        
+        y_lr_res = y_lr.to(memory_format=torch.channels_last)
         torch.cuda.nvtx.range_pop()
 
         torch.cuda.nvtx.range_push(f"global index")
@@ -515,15 +518,23 @@ class ResLoss:
         ].expand(b, -1, -1, -1)
         torch.cuda.nvtx.range_pop()
         
+        """
+        (Pdb) torch.zeros_like(y, device=img_clean.device).stride()
+        (7569408, 1, 7168, 4)
+        (Pdb) y_lr_res.stride()
+        (30277632, 1, 28672, 16)
+        """
         # pdb.set_trace()
-        # form residual
-        y_mean = self.unet(
-            torch.zeros_like(y, device=img_clean.device),
-            y_lr_res,
-            sigma,
-            labels,
-            augment_labels=augment_labels,
-        )
+        if y_mean is None:
+            # form residual
+            y_mean = self.unet(
+                torch.zeros_like(y, device=img_clean.device),
+                y_lr_res,
+                sigma,
+                labels,
+                augment_labels=augment_labels,
+            )
+        
 
         y = y - y_mean
 
@@ -573,14 +584,14 @@ class ResLoss:
                 self.patch_shape_y,
                 self.patch_shape_x,
                 device=img_clean.device,
-            )
+            ).to(memory_format=torch.channels_last)
             y_lr_new = torch.zeros(
                 b * self.patch_num,
                 c_in + input_interp.shape[1],
                 self.patch_shape_y,
                 self.patch_shape_x,
                 device=img_clean.device,
-            )
+            ).to(memory_format=torch.channels_last)
             global_index = torch.zeros(
                 b * self.patch_num,
                 2,
@@ -631,6 +642,12 @@ class ResLoss:
         
         latent = y + torch.randn_like(y) * sigma
         # pdb.set_trace()
+        """
+        (Pdb) latent.stride()
+        (802816, 200704, 448, 1)
+        (Pdb) y_lr.stride()
+        (5619712, 200704, 448, 1)
+        """
         D_yn = net(
             latent,
             y_lr,
@@ -641,7 +658,7 @@ class ResLoss:
         )
         loss = weight * ((D_yn - y) ** 2)
 
-        return loss
+        return loss,y_mean
 
 
 class VELoss_dfsr:
