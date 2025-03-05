@@ -38,6 +38,7 @@ from helpers.train_helpers import (
 import wandb
 import nvtx
 import torch._dynamo
+import thunder
 
 torch._dynamo.reset()
 # Increase the cache size limit
@@ -47,7 +48,7 @@ torch._dynamo.config.force_parameter_static_shapes = False
 # torch._dynamo.config.suppress_errors = True
 torch._dynamo.config.compiled_autograd = True
 
-
+# torch._dynamo.disallow_in_graph()
 
 # Train the CorrDiff model using the configurations in "conf/config_training.yaml"
 @hydra.main(version_base="1.2", config_path="conf", config_name="config_training")
@@ -179,7 +180,7 @@ def main(cfg: DictConfig) -> None:
     # if enable_amp:
     #     model = model.to(amp_dtype) 
         # pdb.set_trace()
-    # model = torch.compile(model)
+    
 
     
     # Enable distributed data parallel if applicable
@@ -191,7 +192,7 @@ def main(cfg: DictConfig) -> None:
             output_device=dist.device,
             find_unused_parameters=dist.find_unused_parameters,
         )
-
+    model = torch.compile(model)
     # Load the regression checkpoint if applicable
     if hasattr(cfg.training.io, "regression_checkpoint_path"):
         regression_checkpoint_path = to_absolute_path(
@@ -205,7 +206,8 @@ def main(cfg: DictConfig) -> None:
         regression_net.eval().requires_grad_(False).to(dist.device).to(memory_format=torch.channels_last)
         # if enable_amp:
         #     regression_net = regression_net.to(amp_dtype) 
-        # regression_net = torch.compile(regression_net)
+        regression_net = torch.compile(regression_net)
+        # regression_net = thunder.jit(regression_net)
         logger0.success("Loaded the pre-trained regression model")
 
     # Instantiate the loss function
@@ -368,11 +370,11 @@ def main(cfg: DictConfig) -> None:
                             # patch_iters = 2
                             y_mean = None
                             with nvtx.annotate(f"patch iterations", color="green"):
-                                for patch_num_per_iter in patch_nums_iter:
+                                for patch_num_per_iter in patch_nums_iter: #[2,2,2,1]
                                     
                                     with nvtx.annotate(f"loss forward", color="green"):
                                         with torch.autocast("cuda", dtype=amp_dtype, enabled=enable_amp):
-                                            with torch._dynamo.compiled_autograd.enable(torch.compile):
+                                            # with torch._dynamo.compiled_autograd.enable(torch.compile):
                                                 loss,y_mean= loss_fn(
                                                     net=model,
                                                     img_clean=img_clean,

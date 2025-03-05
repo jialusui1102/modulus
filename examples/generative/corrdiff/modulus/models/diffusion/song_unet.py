@@ -39,6 +39,9 @@ from modulus.models.diffusion import (
 from modulus.models.meta import ModelMetaData
 from modulus.models.module import Module
 import pdb
+import contextlib 
+
+profile_mode = False
 
 @dataclass
 class MetaData(ModelMetaData):
@@ -322,78 +325,79 @@ class SongUNet(Module):
                     in_channels=cout, out_channels=out_channels, kernel=3, **init_zero
                 )
 
-    @nvtx.annotate(message="SongUNet", color="blue")
+    # @nvtx.annotate(message="SongUNet", color="blue")
     def forward(self, x, noise_labels, class_labels, augment_labels=None):
-        if self.embedding_type != "zero":
-            # Mapping.
-            emb = self.map_noise(noise_labels)
-            emb = (
-                emb.reshape(emb.shape[0], 2, -1).flip(1).reshape(*emb.shape)
-            )  # swap sin/cos
-            if self.map_label is not None:
-                tmp = class_labels
-                if self.training and self.label_dropout:
-                    tmp = tmp * (
-                        torch.rand([x.shape[0], 1], device=x.device)
-                        >= self.label_dropout
-                    ).to(tmp.dtype)
-                emb = emb + self.map_label(tmp * np.sqrt(self.map_label.in_features))
-            if self.map_augment is not None and augment_labels is not None:
-                emb = emb + self.map_augment(augment_labels)
-            emb = silu(self.map_layer0(emb))
-            emb = silu(self.map_layer1(emb))
-        else:
-            emb = torch.zeros(
-                (noise_labels.shape[0], self.emb_channels), device=x.device
-            )
+        with nvtx.annotate(message="SongUNet", color="blue") if profile_mode else contextlib.nullcontext():
+            if self.embedding_type != "zero":
+                # Mapping.
+                emb = self.map_noise(noise_labels)
+                emb = (
+                    emb.reshape(emb.shape[0], 2, -1).flip(1).reshape(*emb.shape)
+                )  # swap sin/cos
+                if self.map_label is not None:
+                    tmp = class_labels
+                    if self.training and self.label_dropout:
+                        tmp = tmp * (
+                            torch.rand([x.shape[0], 1], device=x.device)
+                            >= self.label_dropout
+                        ).to(tmp.dtype)
+                    emb = emb + self.map_label(tmp * np.sqrt(self.map_label.in_features))
+                if self.map_augment is not None and augment_labels is not None:
+                    emb = emb + self.map_augment(augment_labels)
+                emb = silu(self.map_layer0(emb))
+                emb = silu(self.map_layer1(emb))
+            else:
+                emb = torch.zeros(
+                    (noise_labels.shape[0], self.emb_channels), device=x.device
+                )
 
-        # Encoder.
-        skips = []
-        aux = x
-        for name, block in self.enc.items():
-            with nvtx.annotate(f"SongUNet encoder: {name}, input shape {x.shape}", color="blue"):
-                if "aux_down" in name:
-                    aux = block(aux)
-                elif "aux_skip" in name:
-                    x = skips[-1] = x + block(aux)
-                elif "aux_residual" in name:
-                    x = skips[-1] = aux = (x + block(aux)) / np.sqrt(2)
-                else:
-                    # For UNetBlocks check if we should use gradient checkpointing
-                    if isinstance(block, UNetBlock):
-                        if x.shape[-1] > self.checkpoint_threshold:
+            # Encoder.
+            skips = []
+            aux = x
+            for name, block in self.enc.items():
+                with (nvtx.annotate(f"SongUNet encoder: {name}, input shape {x.shape}", color="blue") if profile_mode else contextlib.nullcontext()):
+                    if "aux_down" in name:
+                        aux = block(aux)
+                    elif "aux_skip" in name:
+                        x = skips[-1] = x + block(aux)
+                    elif "aux_residual" in name:
+                        x = skips[-1] = aux = (x + block(aux)) / np.sqrt(2)
+                    else:
+                        # For UNetBlocks check if we should use gradient checkpointing
+                        if isinstance(block, UNetBlock):
+                            if x.shape[-1] > self.checkpoint_threshold:
+                                x = checkpoint(block, x, emb, use_reentrant=False)
+                            else:
+                                x = block(x, emb)
+                        else:
+                            x = block(x)
+                        skips.append(x)
+
+            # Decoder.
+            aux = None
+            tmp = None
+            for name, block in self.dec.items():
+                with nvtx.annotate(f"SongUNet decoder: {name}, input shape {x.shape}", color="blue") if profile_mode else contextlib.nullcontext():
+                    if "aux_up" in name:
+                        aux = block(aux)
+                    elif "aux_norm" in name:
+                        tmp = block(x)
+                    elif "aux_conv" in name:
+                        tmp = block(silu(tmp))
+                        aux = tmp if aux is None else tmp + aux
+                    else:
+                        if x.shape[1] != block.in_channels:
+                            x = torch.cat([x, skips.pop()], dim=1)
+                        # check for checkpointing on decoder blocks and up sampling blocks
+                        if (
+                            x.shape[-1] > self.checkpoint_threshold and "_block" in name
+                        ) or (
+                            x.shape[-1] > (self.checkpoint_threshold / 2) and "_up" in name
+                        ):
                             x = checkpoint(block, x, emb, use_reentrant=False)
                         else:
                             x = block(x, emb)
-                    else:
-                        x = block(x)
-                    skips.append(x)
-
-        # Decoder.
-        aux = None
-        tmp = None
-        for name, block in self.dec.items():
-            with nvtx.annotate(f"SongUNet decoder: {name}, input shape {x.shape}", color="blue"):
-                if "aux_up" in name:
-                    aux = block(aux)
-                elif "aux_norm" in name:
-                    tmp = block(x)
-                elif "aux_conv" in name:
-                    tmp = block(silu(tmp))
-                    aux = tmp if aux is None else tmp + aux
-                else:
-                    if x.shape[1] != block.in_channels:
-                        x = torch.cat([x, skips.pop()], dim=1)
-                    # check for checkpointing on decoder blocks and up sampling blocks
-                    if (
-                        x.shape[-1] > self.checkpoint_threshold and "_block" in name
-                    ) or (
-                        x.shape[-1] > (self.checkpoint_threshold / 2) and "_up" in name
-                    ):
-                        x = checkpoint(block, x, emb, use_reentrant=False)
-                    else:
-                        x = block(x, emb)
-        return aux
+            return aux
 
 
 class SongUNetPosEmbd(SongUNet):
@@ -515,30 +519,33 @@ class SongUNetPosEmbd(SongUNet):
 
         self.gridtype = gridtype
         self.N_grid_channels = N_grid_channels
-        if self.gridtype == "learnable": #if the grid is learnable, make it a part of the model
-            self.pos_embd = torch.nn.Parameter(self._get_positional_embedding(),requires_grad=True)
+        if self.gridtype == "learnable": 
+            self.pos_embd = self._get_positional_embedding()
         else:
             self.pos_embd = self._get_positional_embedding().pin_memory()
             
 
-    @nvtx.annotate(message="SongUNetPos", color="blue")
+    # @nvtx.annotate(message="SongUNetPos", color="blue")
     def forward(
         self, x, noise_labels, class_labels, global_index=None, augment_labels=None
     ):
-        # append positional embedding to input conditioning
-        if self.pos_embd is not None:
-            selected_pos_embd = self.positional_embedding_indexing(x, global_index)
-            x = torch.cat((x, selected_pos_embd), dim=1)
-        # pdb.set_trace()
-        return super().forward(x, noise_labels, class_labels, augment_labels)
+        with nvtx.annotate(message="SongUNetPos", color="blue") if profile_mode else contextlib.nullcontext():
+            # append positional embedding to input conditioning
+            if self.pos_embd is not None:
+                selected_pos_embd = self.positional_embedding_indexing(x, global_index)
+                x = torch.cat((x, selected_pos_embd), dim=1)
+            # pdb.set_trace()
+            return super().forward(x, noise_labels, class_labels, augment_labels)
 
     def positional_embedding_indexing(self, x, global_index):
         if self.gridtype != "learnable":
             if self.pos_embd.device != x.device:
-                self.pos_embd = self.pos_embd.to(x.device, dtype=x.dtype, non_blocking=True)
+                # self.pos_embd = self.pos_embd.to(x.device, dtype=x.dtype, non_blocking=True)
+                self.pos_embd = self.pos_embd.to(x.device, dtype=x.dtype)
+                
             pos_embd_tmp = self.pos_embd
         else:
-            pos_embd_tmp = self.pos_embd.data
+            pos_embd_tmp = self.pos_embd
         if global_index is None:
             selected_pos_embd = (
                 # self.pos_embd.to(x.device)

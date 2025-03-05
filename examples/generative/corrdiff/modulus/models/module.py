@@ -361,14 +361,18 @@ class Module(torch.nn.Module):
                 local_path.joinpath("model.pt"), map_location=model.device,weights_only=True
             )
             
-            #for process apex groupnorm
-            filtered_state_dict = {
-                k: v for k, v in model_dict.items()
-                if ".gn." not in k  # or whatever naming scheme your GN uses
-            }
-
-            # Use strict=False to avoid errors about missing gn parameters
-            model.load_state_dict(filtered_state_dict, strict=False)
+            filtered_state_dict = {}
+            for key, value in model_dict.items():
+                new_key = key
+                for norm_layer in ["norm0", "norm1", "norm2","aux_norm"]:  # Extend this list if needed
+                    if f"{norm_layer}.weight" in key:
+                        new_key = key.replace(f"{norm_layer}.weight", f"{norm_layer}.gn.weight")
+                    elif f"{norm_layer}.bias" in key:
+                        new_key = key.replace(f"{norm_layer}.bias", f"{norm_layer}.gn.bias")
+                
+                filtered_state_dict[new_key] = value
+            # pdb.set_trace()
+            model.load_state_dict(filtered_state_dict)
             # model.load_state_dict(model_dict)
 
         return model

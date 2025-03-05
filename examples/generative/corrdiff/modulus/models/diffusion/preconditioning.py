@@ -757,7 +757,7 @@ class EDMPrecondSR(Module):
             **model_kwargs,
         )  # TODO needs better handling
 
-    @nvtx.annotate(message="EDMPrecondSR", color="orange")
+    # @nvtx.annotate(message="EDMPrecondSR", color="orange")
     def forward(
         self,
         x,

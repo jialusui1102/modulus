@@ -31,13 +31,6 @@ import pdb
 import nvtx
 from apex.contrib.group_norm import GroupNorm as ApexGroupNorm
 
-@torch.compiler.disable
-def nvtx_wrapper(name):
-    torch.cuda.nvtx.range_push(name)
-
-@torch.compiler.disable
-def nvtx_pop():
-    torch.cuda.nvtx.range_pop()
     
 class Linear(torch.nn.Module):
     """
@@ -91,11 +84,14 @@ class Linear(torch.nn.Module):
         )
 
     def forward(self, x):
-        # x = x @ self.weight.to(x.dtype).t()
+        # pdb.set_trace()
+        # if x.dtype != self.weight.dtype:
+        #     self.weight.data = self.weight.data.to(x.dtype)
         x = x @ self.weight.t()
         
         if self.bias is not None:
-            # x = x.add_(self.bias.to(x.dtype))
+            # if x.dtype != self.bias.dtype:
+            #     self.bias.data = self.bias.data.to(x.dtype)
             x = x.add_(self.bias)
             
         return x
@@ -189,11 +185,15 @@ class Conv2d(torch.nn.Module):
         f = f.ger(f).unsqueeze(0).unsqueeze(1) / f.sum().square()
         self.register_buffer("resample_filter", f if up or down else None)
 
+
     def forward(self, x):
-        # w = self.weight.to(x.dtype) if self.weight is not None else None
-        # b = self.bias.to(x.dtype) if self.bias is not None else None
+
         w = self.weight if self.weight is not None else None
         b = self.bias if self.bias is not None else None
+
+        #self.resample_filter is on CPU, which cause device unmatch 
+        if self.resample_filter is not None and self.resample_filter.device != x.device:
+            self.resample_filter = self.resample_filter.to(x.device)
         f = (
             # self.resample_filter.to(x.dtype)
             self.resample_filter
@@ -211,7 +211,9 @@ class Conv2d(torch.nn.Module):
                 stride=2,
                 padding=max(f_pad - w_pad, 0),
             )
-            x = torch.nn.functional.conv2d(x, w, padding=max(w_pad - f_pad, 0))
+            x = torch.nn.functional.conv2d(x, w, padding=max(w_pad - f_pad, 0), bias=b)
+            # x = torch.nn.functional.conv2d(x, w, padding=max(w_pad - f_pad, 0))
+            
         elif self.fused_resample and self.down and w is not None:
             x = torch.nn.functional.conv2d(x, w, padding=w_pad + f_pad)
             x = torch.nn.functional.conv2d(
@@ -219,6 +221,7 @@ class Conv2d(torch.nn.Module):
                 f.tile([self.out_channels, 1, 1, 1]),
                 groups=self.out_channels,
                 stride=2,
+                bias=b
             )
         else:
             if self.up:
@@ -238,10 +241,14 @@ class Conv2d(torch.nn.Module):
                     padding=f_pad,
                 )
             if w is not None:
-                x = torch.nn.functional.conv2d(x, w, padding=w_pad)
-        if b is not None:
-            x = x.add_(b.reshape(1, -1, 1, 1))
+                x = torch.nn.functional.conv2d(x, w, padding=w_pad, bias=b)
+                # x = torch.nn.functional.conv2d(x, w, padding=w_pad)
+                
+        # if b is not None:
+        #     x = x.add_(b.reshape(1, -1, 1, 1))
         return x
+    
+
 
 # @torch.compile()
 # @torch._dynamo.disable()
@@ -280,23 +287,33 @@ class GroupNorm(torch.nn.Module):
         num_groups: int = 32,
         min_channels_per_group: int = 4,
         eps: float = 1e-5,
+        is_act: bool = False
     ):
         super().__init__()
         self.num_groups = min(num_groups, num_channels // min_channels_per_group)
         self.eps = eps
-        self.weight = torch.nn.Parameter(torch.ones(num_channels))
-        self.bias = torch.nn.Parameter(torch.zeros(num_channels))
+        # self.weight = torch.nn.Parameter(torch.ones(num_channels))
+        # self.bias = torch.nn.Parameter(torch.zeros(num_channels))
+        if is_act:
+            self.gn = ApexGroupNorm(
+                num_groups=self.num_groups,
+                num_channels=num_channels,
+                eps=self.eps,
+                affine=True,
+                act='silu'
+            )
+        else:
+            self.gn = ApexGroupNorm(
+                num_groups=self.num_groups,
+                num_channels=num_channels,
+                eps=self.eps,
+                affine=True,
+            )
         
-        self.gn = ApexGroupNorm(
-            num_groups=self.num_groups,
-            num_channels=num_channels,
-            eps=self.eps,
-            affine=True
-        )
         
-        
-    @torch._dynamo.disable()
+    # @torch._dynamo.disable()
     def forward(self, x):
+        # pdb.set_trace()
         # if self.training:
             # Use default torch implementation of GroupNorm for training
             # This does not support channels last memory format
@@ -325,15 +342,15 @@ class GroupNorm(torch.nn.Module):
         # x = x * weight + bias
 
         # x = x.type(dtype)
-        
+        # pdb.set_trace()
         
         # nvidia apex groupnorm (support channelslast)
         #use nvidia apex groupnorm
-        torch.cuda.nvtx.range_push(f"GroupNorm, input shape {x.shape}, numgroups {self.num_groups}")
+        # torch.cuda.nvtx.range_push(f"GroupNorm, input shape {x.shape}, numgroups {self.num_groups}")
         # nvtx_wrapper(f"GroupNorm, input shape {x.shape}, numgroups {self.num_groups}")
         # with torch.profiler.record_function(f"GroupNorm, input shape {x.shape}, numgroups {self.num_groups}"):
         x = self.gn(x)
-        torch.cuda.nvtx.range_pop()
+        # torch.cuda.nvtx.range_pop()
         # nvtx_pop()
         return x
 
@@ -377,7 +394,7 @@ class AttentionOp(torch.autograd.Function):
         ) / np.sqrt(k.shape[1])
         return dq, dk
 
-# @torch.compile
+# @torch.compile(backend="eager")
 class UNetBlock(torch.nn.Module):
     """
     Unified U-Net block with optional up/downsampling and self-attention. Represents
@@ -459,7 +476,7 @@ class UNetBlock(torch.nn.Module):
         self.skip_scale = skip_scale
         self.adaptive_scale = adaptive_scale
 
-        self.norm0 = GroupNorm(num_channels=in_channels, eps=eps)
+        self.norm0 = GroupNorm(num_channels=in_channels, eps=eps, is_act=True)
         self.conv0 = Conv2d(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -474,7 +491,7 @@ class UNetBlock(torch.nn.Module):
             out_features=out_channels * (2 if adaptive_scale else 1),
             **init,
         )
-        self.norm1 = GroupNorm(num_channels=out_channels, eps=eps)
+        self.norm1 = GroupNorm(num_channels=out_channels, eps=eps, is_act=True)
         self.conv1 = Conv2d(
             in_channels=out_channels, out_channels=out_channels, kernel=3, **init_zero
         )
@@ -493,7 +510,7 @@ class UNetBlock(torch.nn.Module):
             )
 
         if self.num_heads:
-            self.norm2 = GroupNorm(num_channels=out_channels, eps=eps)
+            self.norm2 = GroupNorm(num_channels=out_channels, eps=eps, is_act=False)
             self.qkv = Conv2d(
                 in_channels=out_channels,
                 out_channels=out_channels * 3,
@@ -508,12 +525,15 @@ class UNetBlock(torch.nn.Module):
             )
 
     def forward(self, x, emb):
+        # pdb.set_trace()
         # with torch.profiler.record_function("UNetBlock"):
-        torch.cuda.nvtx.range_push("UNetBlock")
-        # nvtx_wrapper("UnetBlock")
-        # torch.cuda.nvtx.range_push("conv,silu,norm1")
+        # torch.cuda.nvtx.range_push("UNetBlock")
         orig = x
-        x = self.conv0(silu(self.norm0(x)))
+        # x = self.conv0(silu(self.norm0(x)))
+        x = self.conv0(self.norm0(x))
+        # if self.conv0.bias is not None:
+        #     x = x.add_(self.conv0.bias.reshape(1, -1, 1, 1))
+        
         # torch.cuda.nvtx.range_pop()
         
         # torch.cuda.nvtx.range_push("affine")
@@ -527,22 +547,34 @@ class UNetBlock(torch.nn.Module):
             # torch.cuda.nvtx.range_pop()    
         else:
             # torch.cuda.nvtx.range_push("adaptive scale else") 
-            x = silu(self.norm1(x.add_(params)))
-            # torch.cuda.nvtx.range_pop()    
+            # x = silu(self.norm1(x.add_(params)))
+            x = self.norm1(x.add_(params))
             
+            # torch.cuda.nvtx.range_pop()    
+        
+        
+        # if self.skip:
         # torch.cuda.nvtx.range_push("conv1") 
+     
         x = self.conv1(
             torch.nn.functional.dropout(x, p=self.dropout, training=self.training)
         )
-        # torch.cuda.nvtx.range_pop()      
+        # if self.conv1.bias is not None:
+        #     x = x.add_(self.conv1.bias.reshape(1, -1, 1, 1))
+        # # torch.cuda.nvtx.range_pop()      
         
-        # torch.cuda.nvtx.range_push("add") 
+        # torch.cuda.nvtx.range_push("add skip") 
         x = x.add_(self.skip(orig) if self.skip is not None else orig)
         # torch.cuda.nvtx.range_pop()      
+            
         
-        # torch.cuda.nvtx.range_push("mult") 
+        # torch.cuda.nvtx.range_push("mult skip scale") 
+        # pdb.set_trace()
+        # if self.skip_scale!=1.0:
         x = x * self.skip_scale
-        # torch.cuda.nvtx.range_pop()      
+        # torch.cuda.nvtx.range_pop() 
+        
+        # x = self.add_bias_skip_scale(x,orig)     
 
         # torch.cuda.nvtx.range_push("num heads") 
         if self.num_heads:
@@ -556,13 +588,35 @@ class UNetBlock(torch.nn.Module):
             w = AttentionOp.apply(q, k)
             a = torch.einsum("nqk,nck->ncq", w, v)
             x = self.proj(a.reshape(*x.shape)).add_(x)
+            # if self.skip_scale!=1.0:
             x = x * self.skip_scale
         # torch.cuda.nvtx.range_pop()      
         
-        torch.cuda.nvtx.range_pop()
+        # torch.cuda.nvtx.range_pop()
         # nvtx_pop()
         return x
-
+    # @torch._dynamo.disable()
+    def dropout_fn(self,x,p,training):
+        return torch.nn.functional.dropout(x, p=p, training=training)
+    
+    # @torch.compile()
+    def add_bias_skip_scale(self,x,orig):
+        if self.conv1.bias is not None:
+            x = x.add_(self.conv1.bias.reshape(1, -1, 1, 1))
+        # torch.cuda.nvtx.range_pop()      
+        
+        # torch.cuda.nvtx.range_push("add skip") 
+        x = x.add_(self.skip(orig) if self.skip is not None else orig)
+        # torch.cuda.nvtx.range_pop()      
+            
+        
+        # torch.cuda.nvtx.range_push("mult skip scale") 
+        # pdb.set_trace()
+        # if self.skip_scale!=1.0:
+        x = x * self.skip_scale
+        # torch.cuda.nvtx.range_pop() 
+        return x
+        
 
 class PositionalEmbedding(torch.nn.Module):
     """
