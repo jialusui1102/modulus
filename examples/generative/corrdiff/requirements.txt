@@ -4,5 +4,5 @@ pip install opencv-fixer==0.2.5
 # 2. execute
 python -c "from opencv_fixer import AutoFix; AutoFix()"
 
-cd apex
+cd /code/modulus/examples/generative/corrdiff/apex
 CFLAGS="-g0" NVCC_APPEND_FLAGS="--threads 8" pip install --no-build-isolation --no-cache-dir --disable-pip-version-check --config-settings "--build-option=--group_norm" .
