@@ -413,7 +413,7 @@ class RegressionLoss:
 
         return loss
 
-
+#only used by Corrdiff? Create a new class for Opt
 class ResLoss:
     """
     Mixture loss function for denoising score matching.

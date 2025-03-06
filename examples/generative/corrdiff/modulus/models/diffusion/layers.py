@@ -31,6 +31,7 @@ import pdb
 import nvtx
 from apex.contrib.group_norm import GroupNorm as ApexGroupNorm
 
+# data casting: how to accommodate, whether to create new classes???
     
 class Linear(torch.nn.Module):
     """
@@ -84,14 +85,9 @@ class Linear(torch.nn.Module):
         )
 
     def forward(self, x):
-        # pdb.set_trace()
-        # if x.dtype != self.weight.dtype:
-        #     self.weight.data = self.weight.data.to(x.dtype)
         x = x @ self.weight.t()
         
         if self.bias is not None:
-            # if x.dtype != self.bias.dtype:
-            #     self.bias.data = self.bias.data.to(x.dtype)
             x = x.add_(self.bias)
             
         return x
@@ -250,7 +246,7 @@ class Conv2d(torch.nn.Module):
     
 
 
-# @torch.compile()
+
 # @torch._dynamo.disable()
 class GroupNorm(torch.nn.Module):
     """
@@ -292,8 +288,8 @@ class GroupNorm(torch.nn.Module):
         super().__init__()
         self.num_groups = min(num_groups, num_channels // min_channels_per_group)
         self.eps = eps
-        # self.weight = torch.nn.Parameter(torch.ones(num_channels))
-        # self.bias = torch.nn.Parameter(torch.zeros(num_channels))
+        self.weight = torch.nn.Parameter(torch.ones(num_channels))
+        self.bias = torch.nn.Parameter(torch.zeros(num_channels))
         if is_act:
             self.gn = ApexGroupNorm(
                 num_groups=self.num_groups,
@@ -312,46 +308,9 @@ class GroupNorm(torch.nn.Module):
         
         
     # @torch._dynamo.disable()
+    #add a config for Apex and other changes as well
     def forward(self, x):
-        # pdb.set_trace()
-        # if self.training:
-            # Use default torch implementation of GroupNorm for training
-            # This does not support channels last memory format
-        # x = torch.nn.functional.group_norm(
-        #     x,
-        #     num_groups=self.num_groups,
-        #     weight=self.weight.to(x.dtype),
-        #     bias=self.bias.to(x.dtype),
-        #     eps=self.eps,
-        # )
-        # else:
-        # Use custom GroupNorm implementation that supports channels last
-        # memory layout for inference
-        # dtype = x.dtype
-        # x = x.float()
-        # x = rearrange(x, "b (g c) h w -> b g c h w", g=self.num_groups)
-
-        # mean = x.mean(dim=[2, 3, 4], keepdim=True)
-        # var = x.var(dim=[2, 3, 4], keepdim=True)
-
-        # x = (x - mean) * (var + self.eps).rsqrt()
-        # x = rearrange(x, "b g c h w -> b (g c) h w")
-
-        # weight = rearrange(self.weight, "c -> 1 c 1 1")
-        # bias = rearrange(self.bias, "c -> 1 c 1 1")
-        # x = x * weight + bias
-
-        # x = x.type(dtype)
-        # pdb.set_trace()
-        
-        # nvidia apex groupnorm (support channelslast)
-        #use nvidia apex groupnorm
-        # torch.cuda.nvtx.range_push(f"GroupNorm, input shape {x.shape}, numgroups {self.num_groups}")
-        # nvtx_wrapper(f"GroupNorm, input shape {x.shape}, numgroups {self.num_groups}")
-        # with torch.profiler.record_function(f"GroupNorm, input shape {x.shape}, numgroups {self.num_groups}"):
         x = self.gn(x)
-        # torch.cuda.nvtx.range_pop()
-        # nvtx_pop()
         return x
 
 
@@ -525,58 +484,24 @@ class UNetBlock(torch.nn.Module):
             )
 
     def forward(self, x, emb):
-        # pdb.set_trace()
-        # with torch.profiler.record_function("UNetBlock"):
-        # torch.cuda.nvtx.range_push("UNetBlock")
         orig = x
-        # x = self.conv0(silu(self.norm0(x)))
         x = self.conv0(self.norm0(x))
-        # if self.conv0.bias is not None:
-        #     x = x.add_(self.conv0.bias.reshape(1, -1, 1, 1))
-        
-        # torch.cuda.nvtx.range_pop()
-        
-        # torch.cuda.nvtx.range_push("affine")
-        params = self.affine(emb).unsqueeze(2).unsqueeze(3)#.to(x.dtype)
-        # torch.cuda.nvtx.range_pop()
-        
+
+        params = self.affine(emb).unsqueeze(2).unsqueeze(3)
         if self.adaptive_scale:
-            # torch.cuda.nvtx.range_push("adaptive scale if") 
+            self.norm1.act=None
             scale, shift = params.chunk(chunks=2, dim=1)
-            x = silu(torch.addcmul(shift, self.norm1(x), scale + 1))
-            # torch.cuda.nvtx.range_pop()    
+            x = silu(torch.addcmul(shift, self.norm1(x), scale + 1)) #non-silu?
+            self.norm1.act='silu'
         else:
-            # torch.cuda.nvtx.range_push("adaptive scale else") 
-            # x = silu(self.norm1(x.add_(params)))
             x = self.norm1(x.add_(params))
-            
-            # torch.cuda.nvtx.range_pop()    
-        
-        
-        # if self.skip:
-        # torch.cuda.nvtx.range_push("conv1") 
      
         x = self.conv1(
             torch.nn.functional.dropout(x, p=self.dropout, training=self.training)
         )
-        # if self.conv1.bias is not None:
-        #     x = x.add_(self.conv1.bias.reshape(1, -1, 1, 1))
-        # # torch.cuda.nvtx.range_pop()      
-        
-        # torch.cuda.nvtx.range_push("add skip") 
         x = x.add_(self.skip(orig) if self.skip is not None else orig)
-        # torch.cuda.nvtx.range_pop()      
-            
-        
-        # torch.cuda.nvtx.range_push("mult skip scale") 
-        # pdb.set_trace()
-        # if self.skip_scale!=1.0:
         x = x * self.skip_scale
-        # torch.cuda.nvtx.range_pop() 
-        
-        # x = self.add_bias_skip_scale(x,orig)     
 
-        # torch.cuda.nvtx.range_push("num heads") 
         if self.num_heads:
             q, k, v = (
                 self.qkv(self.norm2(x))
@@ -588,34 +513,9 @@ class UNetBlock(torch.nn.Module):
             w = AttentionOp.apply(q, k)
             a = torch.einsum("nqk,nck->ncq", w, v)
             x = self.proj(a.reshape(*x.shape)).add_(x)
-            # if self.skip_scale!=1.0:
             x = x * self.skip_scale
-        # torch.cuda.nvtx.range_pop()      
-        
-        # torch.cuda.nvtx.range_pop()
-        # nvtx_pop()
         return x
-    # @torch._dynamo.disable()
-    def dropout_fn(self,x,p,training):
-        return torch.nn.functional.dropout(x, p=p, training=training)
-    
-    # @torch.compile()
-    def add_bias_skip_scale(self,x,orig):
-        if self.conv1.bias is not None:
-            x = x.add_(self.conv1.bias.reshape(1, -1, 1, 1))
-        # torch.cuda.nvtx.range_pop()      
-        
-        # torch.cuda.nvtx.range_push("add skip") 
-        x = x.add_(self.skip(orig) if self.skip is not None else orig)
-        # torch.cuda.nvtx.range_pop()      
-            
-        
-        # torch.cuda.nvtx.range_push("mult skip scale") 
-        # pdb.set_trace()
-        # if self.skip_scale!=1.0:
-        x = x * self.skip_scale
-        # torch.cuda.nvtx.range_pop() 
-        return x
+
         
 
 class PositionalEmbedding(torch.nn.Module):
@@ -648,7 +548,6 @@ class PositionalEmbedding(torch.nn.Module):
         )
         freqs = freqs / (self.num_channels // 2 - (1 if self.endpoint else 0))
         freqs = (1 / self.max_positions) ** freqs
-        # x = x.ger(freqs.to(x.dtype))
         x = x.ger(freqs)
         
         x = torch.cat([x.cos(), x.sin()], dim=1)
@@ -679,7 +578,6 @@ class FourierEmbedding(torch.nn.Module):
         self.register_buffer("freqs", torch.randn(num_channels // 2) * scale)
 
     def forward(self, x):
-        # x = x.ger((2 * np.pi * self.freqs).to(x.dtype))
         x = x.ger((2 * np.pi * self.freqs))
         
         x = torch.cat([x.cos(), x.sin()], dim=1)

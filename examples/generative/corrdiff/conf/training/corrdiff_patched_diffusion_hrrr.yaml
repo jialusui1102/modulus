@@ -53,7 +53,7 @@ hp:
     # Patch size. Patch-based training will be utilized if these dimensions differ from 
     # img_shape_x and img_shape_y
     patch_num: 16
-    max_patch_per_gpu: 9
+    max_patch_per_gpu: 4
     # Number of patches extracted from a single sample. The total number of patches is 
     # defined as patch_num * batch_size_global
     hr_mean_conditioning: True

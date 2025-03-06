@@ -362,6 +362,7 @@ class Module(torch.nn.Module):
             )
             
             filtered_state_dict = {}
+            #TODO: add a if for APEX
             for key, value in model_dict.items():
                 new_key = key
                 for norm_layer in ["norm0", "norm1", "norm2","aux_norm"]:  # Extend this list if needed
