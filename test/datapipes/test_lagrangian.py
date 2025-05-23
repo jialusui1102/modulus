@@ -16,7 +16,7 @@
 
 import pytest
 import torch
-from pytest_utils import import_or_fail, nfsdata_or_fail
+from pytest_utils import import_or_fail
 
 from . import common
 
@@ -27,15 +27,14 @@ Tensor = torch.Tensor
 
 
 @pytest.fixture
-def data_dir():
-    return "/data/nfs/modulus-data/datasets/water"
+def data_dir(nfs_data_dir):
+    return nfs_data_dir.joinpath("datasets/water")
 
 
-@nfsdata_or_fail
 @import_or_fail(["tensorflow", "dgl"])
 @pytest.mark.parametrize("device", ["cuda:0", "cpu"])
 def test_lagrangian_dataset_constructor(data_dir, device, pytestconfig):
-    from modulus.datapipes.gnn.lagrangian_dataset import LagrangianDataset
+    from physicsnemo.datapipes.gnn.lagrangian_dataset import LagrangianDataset
 
     # Test successful construction
     dataset = LagrangianDataset(
@@ -65,7 +64,7 @@ def test_lagrangian_dataset_constructor(data_dir, device, pytestconfig):
 @import_or_fail(["tensorflow", "dgl"])
 @pytest.mark.parametrize("device", ["cuda:0", "cpu"])
 def test_graph_construction(device, pytestconfig):
-    from modulus.datapipes.gnn.lagrangian_dataset import compute_edge_index
+    from physicsnemo.datapipes.gnn.lagrangian_dataset import compute_edge_index
 
     mesh_pos = torch.tensor([[0.0, 0.0], [0.01, 0.0], [1.0, 1.0]], device=device)
     radius = 0.015
