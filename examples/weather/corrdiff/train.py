@@ -32,7 +32,7 @@ import wandb
 from physicsnemo import Module
 from physicsnemo.models.diffusion import UNet, EDMPrecondSuperResolution
 from physicsnemo.distributed import DistributedManager
-from physicsnemo.metrics.diffusion import RegressionLoss, ResidualLoss, RegressionLossCE
+from physicsnemo.metrics.diffusion import RegressionLoss, ResidualLoss, RegressionLossCE, ResidualLossSigma
 from physicsnemo.utils.patching import RandomPatching2D
 from physicsnemo.launch.logging.wandb import initialize_wandb
 from physicsnemo.launch.logging import PythonLogger, RankZeroLoggingWrapper
@@ -50,6 +50,8 @@ from helpers.train_helpers import (
     compute_num_accumulation_rounds,
     handle_and_clip_gradients,
     is_time_for_periodic_task,
+    SigmaLossEmaUpdater,
+    GradNormEMA,
 )
 
 torch._dynamo.reset()
@@ -113,6 +115,13 @@ def main(cfg: DictConfig) -> None:
     # Initialize loggers
     if dist.rank == 0:
         writer = SummaryWriter(log_dir="tensorboard")
+           #    Initialize a new WandB run
+        wandb.login(key="cf2c84ba253d828d73137cae1bd492fd52b5813e")
+        wandb.init( project="CorrDiff_overfitting",
+                    resume="allow",             # Options: 'allow', 'must', 'never'
+                    # id="f9e51kr2",            # The run ID of the process you want to resume)
+                    config=OmegaConf.to_container(cfg),
+                )
     logger = PythonLogger("main")  # General python logger
     logger0 = RankZeroLoggingWrapper(logger, dist)  # Rank 0 logger
     initialize_wandb(
@@ -124,6 +133,7 @@ def main(cfg: DictConfig) -> None:
         config=OmegaConf.to_container(cfg),
         results_dir=cfg.wandb.results_dir,
     )
+
 
     # Resolve and parse configs
     OmegaConf.resolve(cfg)
@@ -421,7 +431,7 @@ def main(cfg: DictConfig) -> None:
         "patched_diffusion",
         "lt_aware_patched_diffusion",
     ):
-        loss_fn = ResidualLoss(
+        loss_fn = ResidualLossSigma(
             regression_net=regression_net,
             hr_mean_conditioning=cfg.model.hr_mean_conditioning,
         )
@@ -438,6 +448,45 @@ def main(cfg: DictConfig) -> None:
         eps=1e-8,
         fused=True,
     )
+    # Initialize adaptive GradNorm
+    adaptive_GradNorm = GradNormEMA(decay=0.99)
+    
+    # class SigmaLossEmaUpdater:
+    # def __init__(
+    #     self,
+    #     device,
+    #     rank,
+    #     sigma_bins_params = None,
+    #     log_to_wandb = False,
+    #     is_distributed = False,
+    
+    """"
+    self.sigma_num_bins = sigma_bins_params.get("num_bins", 100)
+    self.sigma_ema_decay = sigma_bins_params.get("ema_decay", 0.95)
+    self.sigma_update_every = sigma_bins_params.get("update_every", 1)
+    self.sigma_eps = sigma_bins_params.get("eps", 1e-8)
+    self.sigma_warmup_iterations = sigma_bins_params.get(
+        "warmup_iterations", 100
+    )
+    self.sigma_min = sigma_bins_params.get("sigma_min", 0.001)
+    self.sigma_max = sigma_bins_params.get("sigma_max", 1000.0)
+    """
+  
+    sigma_bins_params = {"sigma_min":0.001 ,"sigma_max":2000,"ema_decay":0.999}
+    log_to_wandb = True
+    is_distributed = dist.world_size > 1
+    Ema_Updater = SigmaLossEmaUpdater(dist.device,dist.rank,sigma_bins_params,log_to_wandb,is_distributed)
+    
+    # #local file for sigma+loss
+    # output_path = os.getcwd()
+    # train_log_file = os.path.join(output_path, "train_loss_sigma.cvs")
+    # val_log_file = os.path.join(output_path, "val_loss_sigma.cvs")
+    # # Create file with header if it doesn't exist
+    # for log_file in [train_log_file, val_log_file]:
+    #     if not os.path.exists(log_file):
+    #         with open(log_file, mode="w", newline="") as f:
+    #             writer = csv.writer(f)
+    #             writer.writerow(["step", "sigma", "weighted_mean_loss", "unweighted_mean_loss"])  
 
     # Record the current time to measure the duration of subsequent operations.
     start_time = time.time()
@@ -491,6 +540,7 @@ def main(cfg: DictConfig) -> None:
                     # Compute & accumulate gradients
                     optimizer.zero_grad(set_to_none=True)
                     loss_accum = 0
+                    Ema_Updater.iterations_since_start = cur_nimg
                     for n_i in range(num_accumulation_rounds):
                         with nvtx.annotate(
                             f"accumulation round {n_i}", color="Magenta"
@@ -552,7 +602,7 @@ def main(cfg: DictConfig) -> None:
                                     with torch.autocast(
                                         "cuda", dtype=amp_dtype, enabled=enable_amp
                                     ):
-                                        loss = loss_fn(**loss_fn_kwargs)
+                                        loss, loss_term_for_ema, bin_indices = loss_fn(**loss_fn_kwargs)
 
                                 loss = loss.sum() / batch_size_per_gpu
                                 loss_accum += (
@@ -562,6 +612,14 @@ def main(cfg: DictConfig) -> None:
                                 )
                                 with nvtx.annotate(f"loss backward", color="yellow"):
                                     loss.backward()
+                                
+                            # --- Update Sigma Binning State ---
+                            if loss_term_for_ema is not None and bin_indices is not None:
+                                Ema_Updater._update_sigma_bin_state(
+                                    loss_term_for_ema,
+                                    bin_indices,
+                                )
+
 
                     with nvtx.annotate(f"loss aggregate", color="green"):
                         loss_sum = torch.tensor([loss_accum], device=dist.device)
@@ -585,6 +643,9 @@ def main(cfg: DictConfig) -> None:
                             average_loss_running_mean,
                             cur_nimg,
                         )
+                        wandb.log({"training loss": average_loss}, step=cur_nimg)
+                        wandb.log({"training loss running mean": average_loss_running_mean}, step=cur_nimg)
+                        wandb.log({"cur_nimg": cur_nimg}, step=cur_nimg)
 
                     ptt = is_time_for_periodic_task(
                         cur_nimg,
@@ -617,10 +678,24 @@ def main(cfg: DictConfig) -> None:
                             current_lr = g["lr"]
                             if dist.rank == 0:
                                 writer.add_scalar("learning_rate", current_lr, cur_nimg)
+                                wandb.log({"lr": current_lr}, step=cur_nimg)
+                                
+                        params_grads = [p.grad for p in model.parameters() if p.grad is not None]
+                        total_norm = torch.nn.utils.get_total_norm(params_grads)
+                        ema_value = adaptive_GradNorm.update(total_norm.item())
+                        clip_threshold = adaptive_GradNorm.get_threshold(scale=2.0)  # Can tune scale
+                        # print(f"total norm is {total_norm}")
+                        if total_norm > clip_threshold:
+                            print(f"[Gradient Clipping] Clipping from {total_norm:.2e} to {clip_threshold:.2e}")
+                        wandb.log({"Gradient Norm": total_norm}, step=cur_nimg)
+                        wandb.log({"Gradient Clipping Threshold": clip_threshold}, step=cur_nimg)
+                        
                         handle_and_clip_gradients(
                             model,
-                            grad_clip_threshold=cfg.training.hp.grad_clip_threshold,
+                            # grad_clip_threshold=cfg.training.hp.grad_clip_threshold,
+                            grad_clip_threshold=clip_threshold,
                         )
+                    
                     with nvtx.annotate("optimizer step", color="blue"):
                         optimizer.step()
 
@@ -631,6 +706,13 @@ def main(cfg: DictConfig) -> None:
                     # Validation
                     if validation_dataset_iterator is not None:
                         valid_loss_accum = 0
+                        all_val_loss_terms = []
+                        all_val_bin_indices = []
+                        if cur_nimg == cfg.training.hp.total_batch_size:
+                            Ema_Updater.first_validation_run = True
+                            
+                        Ema_Updater.iterations_since_start = cur_nimg
+
                         if is_time_for_periodic_task(
                             cur_nimg,
                             cfg.training.io.validation_freq,
@@ -701,7 +783,11 @@ def main(cfg: DictConfig) -> None:
                                         with torch.autocast(
                                             "cuda", dtype=amp_dtype, enabled=enable_amp
                                         ):
-                                            loss_valid = loss_fn(**loss_valid_kwargs)
+                                            loss_valid, loss_term_for_ema_val, bin_indices_val = loss_fn(**loss_valid_kwargs)
+                                            if loss_term_for_ema is not None and bin_indices is not None:
+                                                all_val_loss_terms.append(loss_term_for_ema_val)
+                                                all_val_bin_indices.append(bin_indices_val)
+
 
                                         loss_valid = (
                                             (loss_valid.sum() / batch_size_per_gpu)
@@ -727,6 +813,13 @@ def main(cfg: DictConfig) -> None:
                                     writer.add_scalar(
                                         "validation_loss", average_valid_loss, cur_nimg
                                     )
+                                    wandb.log({"validation loss": average_valid_loss}, step=cur_nimg)
+                                if Ema_Updater.log_to_wandb:
+                                    Ema_Updater._update_and_log_val_sigma_bins(
+                                        all_val_loss_terms,
+                                        all_val_bin_indices,
+                                )
+
 
                 if is_time_for_periodic_task(
                     cur_nimg,
