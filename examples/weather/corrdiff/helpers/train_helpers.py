@@ -448,6 +448,13 @@ class SigmaLossEmaUpdater:
         # 1. Concatenate all batch results from this rank
         loss_term_for_ema = torch.cat(all_val_loss_terms)
         bin_indices = torch.cat(all_val_bin_indices)
+        """
+        (Pdb) loss_term_for_ema.shape
+        torch.Size([320, 4, 448, 448])
+        (Pdb) bin_indices.shape
+        torch.Size([320])
+        """
+        
 
         # --- Combined Loss ---
         self.val_ema_loss_bins = self._calculate_and_update_ema_bins(

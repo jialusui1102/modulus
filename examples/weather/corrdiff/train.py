@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
+import os,csv
 import time
 import psutil
 from contextlib import nullcontext
@@ -61,6 +61,42 @@ torch._dynamo.config.verbose = True  # Enable verbose logging
 torch._dynamo.config.suppress_errors = False  # Forces the error to show all details
 torch._logging.set_logs(recompiles=True, graph_breaks=True)
 
+def prepare_log_sigma_log(sigma, loss_term_for_ema, unweighted_loss):
+    sigma = sigma.squeeze(-1).squeeze(-1).squeeze(-1)
+    dims_to_reduce = tuple(range(1, loss_term_for_ema.ndim))
+    mean_weighted_loss = loss_term_for_ema.mean(dim=dims_to_reduce)
+    mean_unweighted_loss = unweighted_loss.mean(dim=dims_to_reduce)
+    return sigma, mean_weighted_loss, mean_unweighted_loss
+
+def log_all_ranks(dist, step, sigma, weighted_mean_loss, unweighted_mean_loss, log_file):
+    # Prepare local python data
+    local_data = [
+        (sigma_.item(), w.item(), u.item())
+        for sigma_, w, u in zip(sigma, weighted_mean_loss, unweighted_mean_loss)
+    ]
+
+    world_size = dist.world_size
+    rank = dist.rank
+
+    if world_size > 1 and dist.is_initialized():
+        # gather to rank 0
+        obj_list = [None] * world_size if rank == 0 else None
+        # torch.distributed.barrier()
+        dist.gather_object(local_data, obj_list if rank == 0 else None, dst=0)
+
+        if rank == 0:
+            with open(log_file, mode="a", newline="") as f:
+                writer = csv.writer(f)
+                for rank_data in obj_list:
+                    for s, w, u in rank_data:
+                        writer.writerow([step, s, w, u])
+    else:
+        # single-process or dist not initialized: just write local
+        if rank == 0:
+            with open(log_file, mode="a", newline="") as f:
+                writer = csv.writer(f)
+                for s, w, u in local_data:
+                    writer.writerow([step, s, w, u])
 
 def checkpoint_list(path, suffix=".mdlus"):
     """Helper function to return sorted list, in ascending order, of checkpoints in a path"""
@@ -119,7 +155,7 @@ def main(cfg: DictConfig) -> None:
         wandb.login(key="cf2c84ba253d828d73137cae1bd492fd52b5813e")
         wandb.init( project="CorrDiff_overfitting",
                     resume="allow",             # Options: 'allow', 'must', 'never'
-                    # id="f9e51kr2",            # The run ID of the process you want to resume)
+                    id="f9e51kr2",            # The run ID of the process you want to resume)
                     config=OmegaConf.to_container(cfg),
                 )
     logger = PythonLogger("main")  # General python logger
@@ -434,6 +470,7 @@ def main(cfg: DictConfig) -> None:
         loss_fn = ResidualLossSigma(
             regression_net=regression_net,
             hr_mean_conditioning=cfg.model.hr_mean_conditioning,
+            distribution="log_uniform"
         )
     elif cfg.model.name == "regression" or cfg.model.name == "lt_aware_regression":
         loss_fn = RegressionLoss()
@@ -449,7 +486,7 @@ def main(cfg: DictConfig) -> None:
         fused=True,
     )
     # Initialize adaptive GradNorm
-    adaptive_GradNorm = GradNormEMA(decay=0.99)
+    adaptive_GradNorm = GradNormEMA(decay=0.95)
     
     # class SigmaLossEmaUpdater:
     # def __init__(
@@ -472,21 +509,21 @@ def main(cfg: DictConfig) -> None:
     self.sigma_max = sigma_bins_params.get("sigma_max", 1000.0)
     """
   
-    sigma_bins_params = {"sigma_min":0.001 ,"sigma_max":2000,"ema_decay":0.999}
+    sigma_bins_params = {"sigma_min":0.001 ,"sigma_max":1000,"ema_decay":0.999}
     log_to_wandb = True
     is_distributed = dist.world_size > 1
     Ema_Updater = SigmaLossEmaUpdater(dist.device,dist.rank,sigma_bins_params,log_to_wandb,is_distributed)
     
     # #local file for sigma+loss
-    # output_path = os.getcwd()
-    # train_log_file = os.path.join(output_path, "train_loss_sigma.cvs")
-    # val_log_file = os.path.join(output_path, "val_loss_sigma.cvs")
-    # # Create file with header if it doesn't exist
-    # for log_file in [train_log_file, val_log_file]:
-    #     if not os.path.exists(log_file):
-    #         with open(log_file, mode="w", newline="") as f:
-    #             writer = csv.writer(f)
-    #             writer.writerow(["step", "sigma", "weighted_mean_loss", "unweighted_mean_loss"])  
+    output_path = os.getcwd()
+    train_log_file = os.path.join(output_path, "train_loss_sigma.cvs")
+    val_log_file = os.path.join(output_path, "val_loss_sigma.cvs")
+    # Create file with header if it doesn't exist
+    for log_file in [train_log_file, val_log_file]:
+        if not os.path.exists(log_file):
+            with open(log_file, mode="w", newline="") as f:
+                writer_ = csv.writer(f)
+                writer_.writerow(["step", "sigma", "weighted_mean_loss", "unweighted_mean_loss"])  
 
     # Record the current time to measure the duration of subsequent operations.
     start_time = time.time()
@@ -602,7 +639,8 @@ def main(cfg: DictConfig) -> None:
                                     with torch.autocast(
                                         "cuda", dtype=amp_dtype, enabled=enable_amp
                                     ):
-                                        loss, loss_term_for_ema, bin_indices = loss_fn(**loss_fn_kwargs)
+                                        loss, sigma, loss_term_for_ema, unweighted_loss, bin_indices = loss_fn(**loss_fn_kwargs)
+                                sigma, weighted_mean_loss, unweighted_mean_loss = prepare_log_sigma_log(sigma, loss_term_for_ema, unweighted_loss)
 
                                 loss = loss.sum() / batch_size_per_gpu
                                 loss_accum += (
@@ -619,6 +657,13 @@ def main(cfg: DictConfig) -> None:
                                     loss_term_for_ema,
                                     bin_indices,
                                 )
+                            # if dist.rank == 0:
+                            #     with open(train_log_file, mode="a", newline="") as f:
+                            #         writer_ = csv.writer(f)
+                            #         for sigma_,weighted_mean_loss_,unweighted_mean_loss_ in zip(sigma, weighted_mean_loss, unweighted_mean_loss):
+                            #             writer_.writerow([cur_nimg, sigma_.item(), weighted_mean_loss_.item(),unweighted_mean_loss_.item()])
+                            log_all_ranks(dist,cur_nimg,sigma,weighted_mean_loss,unweighted_mean_loss,train_log_file)
+                            
 
 
                     with nvtx.annotate(f"loss aggregate", color="green"):
@@ -783,10 +828,19 @@ def main(cfg: DictConfig) -> None:
                                         with torch.autocast(
                                             "cuda", dtype=amp_dtype, enabled=enable_amp
                                         ):
-                                            loss_valid, loss_term_for_ema_val, bin_indices_val = loss_fn(**loss_valid_kwargs)
-                                            if loss_term_for_ema is not None and bin_indices is not None:
-                                                all_val_loss_terms.append(loss_term_for_ema_val)
-                                                all_val_bin_indices.append(bin_indices_val)
+                                            loss_valid, sigma_val, loss_term_for_ema_val, unweighted_loss_val, bin_indices_val = loss_fn(**loss_valid_kwargs)
+                                        if loss_term_for_ema is not None and bin_indices is not None:
+                                            all_val_loss_terms.append(loss_term_for_ema_val)
+                                            all_val_bin_indices.append(bin_indices_val)
+                                        sigma_val, weighted_mean_loss_val, unweighted_mean_loss_val = prepare_log_sigma_log(sigma_val, loss_term_for_ema_val, unweighted_loss_val)
+                                        
+                                        # if dist.rank == 0:
+                                        #     with open(val_log_file, mode="a", newline="") as f:
+                                        #         writer_ = csv.writer(f)
+                                        #         for sigma_,weighted_mean_loss_,unweighted_mean_loss_ in zip(sigma_val, weighted_mean_loss_val, unweighted_mean_loss_val):
+                                        #             writer_.writerow([cur_nimg, sigma_.item(), weighted_mean_loss_.item(),unweighted_mean_loss_.item()])
+                                        log_all_ranks(dist,cur_nimg,sigma_val,weighted_mean_loss_val,unweighted_mean_loss_val,val_log_file)
+                                        
 
 
                                         loss_valid = (
